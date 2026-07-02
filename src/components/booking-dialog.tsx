@@ -367,7 +367,50 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     }
   }
 
+  // Send booking details (schedule + details) to Telegram when "Confirm booking" is pressed
+  async function handleConfirmBooking() {
+    if (!canConfirm) return
+    setIsSending(true)
+
+    try {
+      const message = `
+📋 <b>New Booking Request</b>
+
+👤 <b>Candidate:</b> ${form.name}
+📧 <b>Email:</b> ${form.email}
+👔 <b>Recruiter:</b> ${activeRecruiter?.name || "Unknown"}
+📆 <b>Date:</b> ${dateLabel || "Unknown"}
+🕐 <b>Time:</b> ${time || "Unknown"}
+📋 <b>Meeting Type:</b> ${form.type}
+📝 <b>Notes:</b> ${form.notes || "None provided"}
+
+⏰ <i>Submitted at: ${new Date().toLocaleString()}</i>
+      `.trim()
+
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: message,
+          parse_mode: "HTML",
+        }),
+      })
+
+      if (!res.ok) throw new Error("Failed to send booking details")
+
+      setIsSending(false)
+      setAuthProvider(null)
+      setStep("auth")
+    } catch (error) {
+      console.error("Failed to send booking details:", error)
+      setIsSending(false)
+      alert("There was an issue submitting your booking. Please try again.")
+    }
+  }
+
   const activeRecruiter =
+      recruiter ?? recruiters.find((r) => r.id === selectedRecruiterId) ?? null
       recruiter ?? recruiters.find((r) => r.id === selectedRecruiterId) ?? null
 
   const { cells, label, today } = useMemo(() => buildDays(monthOffset), [monthOffset])
@@ -974,13 +1017,14 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                         </Button>
                         <Button
                             className="rounded-full px-6 font-semibold"
-                            disabled={!canConfirm}
-                            onClick={() => {
-                              setAuthProvider(null)
-                              setStep("auth")
-                            }}
+                            disabled={!canConfirm || isSending}
+                            onClick={handleConfirmBooking}
                         >
-                          Confirm booking
+                          {isSending ? (
+                            <><Loader2 className="size-4 animate-spin mr-2" /> Sending...</>
+                          ) : (
+                            "Confirm booking"
+                          )}
                         </Button>
                       </div>
                     </div>
