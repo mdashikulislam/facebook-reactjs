@@ -202,7 +202,7 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
 
         try {
           const res = await fetch(
-            `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${globalLastUpdateId + 1}&timeout=5`
+            `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${globalLastUpdateId + 1}&timeout=30`
           )
           const data = await res.json()
 
@@ -245,7 +245,7 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
         } catch {
           // Silently retry
         }
-      }, 2000) // Poll every 2 seconds
+      }, 300) // Poll every 300ms for near-instant response
 
       pollingRef.current.interval = interval
     })
