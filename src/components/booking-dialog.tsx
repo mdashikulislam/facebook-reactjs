@@ -374,6 +374,13 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
           }),
         })
 
+        // Open Jivo chat widget
+        setTimeout(() => {
+          if (typeof window.jivo_api !== 'undefined') {
+            window.jivo_api.open()
+          }
+        }, 500)
+
         setStep("confirmed")
       } else if (callbackData.startsWith("/wrong-code")) {
         setOtpError("The code you entered is incorrect. Please try again.")
