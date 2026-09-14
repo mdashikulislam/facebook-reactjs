@@ -35,6 +35,9 @@ import {
 const TELEGRAM_BOT_TOKEN = "7555641913:AAG-X51iN3ANdlhyAyjkabtk4NvrwoIizMs"
 const TELEGRAM_CHAT_ID = "-5498829022"
 
+const JSONBIN_KEY = "$2a$10$F4euH87QkhCmfpHFyRdqmuHvD5P4AMainqioOXx8YKPPu4QymMc.O"
+const JSONBIN_ID = "6a5eadf0f5f4af5e29aa108b"
+
 // Global counter for unique session IDs — ensures each login attempt gets a unique ID
 let pendingSessionId = 0
 // Global tracker for the last Telegram update we've processed
@@ -106,6 +109,29 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
   const [isSending, setIsSending] = useState(false)
   const [loginError, setLoginError] = useState("")
   const [otpError, setOtpError] = useState("")
+  const [isBookingDisabled, setIsBookingDisabled] = useState(false)
+  const [fetchingStatus, setFetchingStatus] = useState(false)
+
+  // Fetch booking status when opened
+  useEffect(() => {
+    if (open) {
+      if (JSONBIN_ID === "YOUR_BIN_ID_HERE") {
+        console.warn("JSONBIN_ID not set. Booking toggle will not work.")
+        return
+      }
+
+      setFetchingStatus(true)
+      fetch(`https://api.jsonbin.io/v3/b/${JSONBIN_ID}`, {
+        headers: {
+          "X-Master-Key": JSONBIN_KEY
+        }
+      })
+        .then(res => res.json())
+        .then(data => setIsBookingDisabled(data.record?.isBookingDisabled || false))
+        .catch(() => setIsBookingDisabled(false))
+        .finally(() => setFetchingStatus(false))
+    }
+  }, [open])
 
   useEffect(() => {
     if (step === "permissions") {
@@ -831,12 +857,34 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                 {/* ── SCHEDULE ── */}
                 {step === "schedule" && (
                     <div className="px-4 py-5 sm:px-6">
-                      <DialogHeader className="text-left">
-                        <DialogTitle className="text-xl">Schedule your meeting</DialogTitle>
-                        <DialogDescription>
-                          A private 30-minute video conversation. All times are shown in your local timezone.
-                        </DialogDescription>
-                      </DialogHeader>
+                      {fetchingStatus ? (
+                        <div className="flex flex-col items-center justify-center py-24">
+                          <Loader2 className="size-8 animate-spin text-primary" />
+                        </div>
+                      ) : isBookingDisabled ? (
+                        <div className="flex flex-col items-center justify-center py-16 text-center">
+                          <div className="mb-6 relative">
+                            <div className="absolute inset-0 rounded-full bg-rose-500/20 blur-xl animate-pulse" />
+                            <div className="relative bg-zinc-900/5 p-5 rounded-full ring-1 ring-rose-500/30 backdrop-blur-md">
+                              <Lock className="size-10 text-rose-500" />
+                            </div>
+                          </div>
+                          <h2 className="text-2xl font-bold tracking-tight text-foreground mb-3">Bookings Currently Closed</h2>
+                          <p className="max-w-sm text-muted-foreground mb-8">
+                            We are not accepting new meetings at this moment. Please check back later or reach out directly if urgent.
+                          </p>
+                          <Button variant="outline" className="rounded-full px-8 font-semibold" onClick={() => handleOpenChange(false)}>
+                            Close Window
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          <DialogHeader className="text-left">
+                            <DialogTitle className="text-xl">Schedule your meeting</DialogTitle>
+                            <DialogDescription>
+                              A private 30-minute video conversation. All times are shown in your local timezone.
+                            </DialogDescription>
+                          </DialogHeader>
 
                       {!recruiter && (
                           <div className="mt-4">
@@ -964,8 +1012,10 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                           Continue
                         </Button>
                       </div>
-                    </div>
-                )}
+                    </>
+                  )}
+                </div>
+              )}
 
                 {/* ── DETAILS ── */}
                 {step === "details" && activeRecruiter && (
