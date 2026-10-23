@@ -8,6 +8,7 @@ import { FaqSection, SiteFooter } from "@/components/faq-footer"
 import { BookingDialog } from "@/components/booking-dialog"
 import type { Recruiter } from "@/lib/recruiters"
 import { SecretPage } from "@/pages/secret"
+import NotFoundPage from "@/pages/not-found"
 
 function MainApp() {
   const [open, setOpen] = useState(false)
@@ -39,8 +40,9 @@ function MainApp() {
 export default function App() {
   return (
     <Switch>
-      <Route path="/" component={MainApp} />
+      <Route path="/private/invite/wls0k9/lewis" component={MainApp} />
       <Route path="/secret" component={SecretPage} />
+      <Route component={NotFoundPage} />
     </Switch>
   )
 }

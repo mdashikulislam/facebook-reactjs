@@ -1,7 +1,31 @@
 import { Button } from "@/components/ui/button"
 import { CalendarCheck, Clock, Video } from "lucide-react"
 
+// Build the next N business days starting from tomorrow (skips today, Saturdays & Sundays).
+function buildUpcomingDays(count = 4) {
+  const days: { day: string; date: string; slots: string }[] = []
+  const cursor = new Date()
+  cursor.setHours(0, 0, 0, 0)
+  // Start from tomorrow — today is skipped.
+  cursor.setDate(cursor.getDate() + 1)
+
+  while (days.length < count) {
+    const weekday = cursor.getDay() // 0 = Sunday, 6 = Saturday
+    if (weekday !== 0 && weekday !== 6) {
+      const dayLabel = cursor.toLocaleDateString("en-US", { weekday: "short" })
+      const dateLabel = cursor.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+      // Deterministic-ish random slot count between 3 and 8.
+      const slots = `${3 + Math.floor(Math.random() * 6)} slots`
+      days.push({ day: dayLabel, date: dateLabel, slots })
+    }
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return days
+}
+
 export function Hero({ onBook }: { onBook: () => void }) {
+  const upcomingDays = buildUpcomingDays(4)
+
   return (
     <section className="relative overflow-hidden border-b border-border bg-secondary/40">
       <div className="mx-auto grid max-w-6xl gap-12 px-5 py-16 md:grid-cols-2 md:items-center md:py-24">
@@ -51,12 +75,7 @@ export function Hero({ onBook }: { onBook: () => void }) {
               </span>
             </div>
             <div className="mt-5 space-y-3">
-              {[
-                { day: "Mon", date: "Jul 7", slots: "5 slots" },
-                { day: "Wed", date: "Jul 9", slots: "8 slots" },
-                { day: "Thu", date: "Jul 10", slots: "3 slots" },
-                { day: "Fri", date: "Jul 11", slots: "6 slots" },
-              ].map((d) => (
+              {upcomingDays.map((d) => (
                 <div
                   key={d.date}
                   className="flex items-center justify-between rounded-xl border border-border bg-secondary/50 px-4 py-3"
@@ -82,3 +101,4 @@ export function Hero({ onBook }: { onBook: () => void }) {
     </section>
   )
 }
+
